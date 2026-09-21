@@ -426,14 +426,7 @@ body {
 
 .crt__scanlines {
   z-index: 4;
-  background-image: repeating-linear-gradient(
-    to bottom,
-    rgba(214, 255, 244, 0.032) 0px,
-    rgba(214, 255, 244, 0.032) 1px,
-    rgba(0, 0, 0, 0.16) 1px,
-    rgba(0, 0, 0, 0.16) 2px
-  );
-  opacity: 0;
+  display: none;
 }
 
 .crt__noise {
@@ -491,7 +484,62 @@ body {
   }
 }
 
+.sound-ui {
+  pointer-events: none;
+  position: fixed;
+  inset: 0;
+  z-index: 10002;
+  font-family: var(--font-sound-vt), "VT323", monospace;
+}
+
+.sound-ui__tune {
+  position: absolute;
+  left: 50%;
+  bottom: 6.5vh;
+  transform: translateX(-50%);
+  margin: 0;
+  color: rgba(214, 228, 255, 0.48);
+  font-size: 12px;
+  letter-spacing: 0.28em;
+  text-indent: 0.28em;
+  animation: sound-tune-blink 2.6s ease-in-out infinite;
+}
+
+.sound-ui__toggle {
+  pointer-events: auto;
+  position: absolute;
+  right: 18px;
+  bottom: 14px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: rgba(214, 228, 255, 0.4);
+  font: inherit;
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  cursor: pointer;
+}
+
+.sound-ui__toggle:hover {
+  color: rgba(214, 228, 255, 0.72);
+}
+
+@keyframes sound-tune-blink {
+  0%,
+  100% {
+    opacity: 0.22;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
+  .sound-ui__tune {
+    animation: none;
+    opacity: 0.45;
+  }
+
   .crt__glass {
     animation: none;
   }

@@ -29,6 +29,8 @@ import {
   type GuideRefract,
 } from "@/components/crt/guideRefract";
 import { TvGuide } from "@/components/crt/TvGuide";
+import { MainFx } from "@/components/MainFx";
+import { publishEnter } from "@/lib/sound/soundBus";
 import type { Project } from "@/sanity/lib/queries";
 
 type CrtMode = "explore" | "guide" | "playback";
@@ -48,6 +50,7 @@ export function CrtScreen({ projects }: CrtScreenProps) {
   const currentRef = useRef({preview: 0, misalign: 1});
   const interferenceRef = useRef({...INITIAL_INTERFERENCE});
   const enterRef = useRef({...INITIAL_ENTER});
+  const enterPhaseRef = useRef(INITIAL_ENTER.phase);
   const nearestIdRef = useRef<string | null>(null);
   const hotspotsRef = useRef<Hotspot[]>([]);
   const startLoopRef = useRef<() => void>(() => {});
@@ -100,6 +103,7 @@ export function CrtScreen({ projects }: CrtScreenProps) {
     if (!renderer) {
       return;
     }
+    renderer.setGuide(programs);
     const refract = createGuideRefract();
     refractRef.current = refract;
 
@@ -145,6 +149,10 @@ export function CrtScreen({ projects }: CrtScreenProps) {
       refractRef.current = null;
     };
   }, [mode]);
+
+  useEffect(() => {
+    glRef.current?.setGuide(programs);
+  }, [programs, mode]);
 
   useEffect(() => {
     const apply = (
@@ -224,12 +232,32 @@ export function CrtScreen({ projects }: CrtScreenProps) {
         hasProgramsRef.current && !locked,
       );
       const vis = entered.visuals;
+      const prevPhase = enterPhaseRef.current;
+      const nextPhase = enterRef.current.phase;
+      if (prevPhase !== nextPhase) {
+        if (nextPhase === "dwell") {
+          publishEnter("hold");
+        } else if (
+          nextPhase === "idle" &&
+          (prevPhase === "dwell" || prevPhase === "inhale")
+        ) {
+          publishEnter("cancel");
+        } else if (nextPhase === "surge") {
+          publishEnter("flash");
+        } else if (nextPhase === "land") {
+          publishEnter("land");
+        }
+      }
+      enterPhaseRef.current = nextPhase;
 
       if (
         entered.finished &&
         modeRef.current === "explore" &&
         hasProgramsRef.current
       ) {
+        if (window.history.state?.crtView !== "guide") {
+          window.history.pushState({crtView: "guide"}, "", window.location.href);
+        }
         modeRef.current = "guide";
         setMode("guide");
       }
@@ -263,6 +291,10 @@ export function CrtScreen({ projects }: CrtScreenProps) {
         enterBlur: locked ? 0 : vis.blur,
         enterCA: locked ? 0 : vis.ca,
         noiseSlow: locked ? 0 : vis.noiseSlow,
+        guideAmount: locked ? 0 : extras.guideAmount,
+        wash: locked ? 0 : extras.wash,
+        bandShiftX: locked ? 0 : extras.bandShiftX,
+        bandShiftY: locked ? 0 : extras.bandShiftY,
       });
 
       if (node) {
@@ -324,8 +356,21 @@ export function CrtScreen({ projects }: CrtScreenProps) {
       }
     };
 
+    const onPopState = () => {
+      enterRef.current = {...INITIAL_ENTER};
+      enterPhaseRef.current = INITIAL_ENTER.phase;
+      pointerRef.current = null;
+      setPlaying(null);
+      setMode("explore");
+      startLoopRef.current();
+    };
+
     window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
+    window.addEventListener("popstate", onPopState);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("popstate", onPopState);
+    };
   }, [mode]);
 
   const updatePointer = (clientX: number, clientY: number) => {
@@ -404,6 +449,7 @@ export function CrtScreen({ projects }: CrtScreenProps) {
           <canvas ref={canvasRef} className="crt__gl" aria-hidden="true" />
         ) : null}
       </div>
+      {mode === "explore" ? <MainFx /> : null}
     </main>
   );
 }

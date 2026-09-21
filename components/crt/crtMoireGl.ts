@@ -1,3 +1,6 @@
+import {drawGuideTexture} from "@/components/crt/drawGuideTexture";
+import type {GuideProgram} from "@/components/crt/projectPreview";
+
 const VERT = `
 attribute vec2 aPos;
 void main() {
@@ -32,6 +35,10 @@ uniform float uEnterScan;
 uniform float uEnterBlur;
 uniform float uEnterCA;
 uniform float uNoiseSlow;
+uniform sampler2D uGuide;
+uniform float uGuideAmount;
+uniform float uWash;
+uniform vec2 uBandShift;
 
 const float TAU = 6.28318530718;
 const float TAU3 = 2.09439510239;
@@ -145,44 +152,6 @@ vec2 analogUv(vec2 uv, float frame) {
   return q;
 }
 
-float analogSnow(vec2 uv, float frame) {
-  vec2 seed = vec2(frame * 0.0046, frame * 0.0033);
-  float rx = max(uResolution.x, 1.0);
-  float ry = max(uResolution.y, 1.0);
-  float x = uv.x * rx * 0.5;
-  float y = uv.y * ry * 0.5;
-  float line = floor(y);
-  float stagger = hash(vec2(line, 5.2));
-
-  float h1 = hash(vec2(floor(x / 30.0 + stagger * 2.4), line));
-  float h2 = hash(vec2(floor(x / 40.0 + stagger * 1.6), line + 19.0));
-  float h3 = hash(vec2(floor(x / 50.0 - stagger * 1.1), line + 41.0));
-  float live = hash(vec2(floor(x / 40.0), line) + vec2(frame, 1.7));
-  float prev = hash(vec2(floor(x / 40.0), line) + vec2(frame - 1.0, 1.7));
-  float flicker = mix(prev, live, 0.22);
-  float n1 = mix(h1, flicker, 0.12);
-  float n2 = mix(h2, flicker, 0.1);
-  float n3 = mix(h3, flicker, 0.1);
-  float grain = vnoise(vec2(x / 7.0, y) + seed);
-  n1 *= mix(0.78, 1.18, grain);
-
-  float n = max(n1, max(n2 * 0.92, n3 * 0.78));
-  float clump = vnoise(vec2(x / 92.0, y / 8.0) + seed * 0.35);
-  n *= mix(0.7, 1.28, clump);
-
-  float thr = mix(0.7, 0.48, uGlow);
-  float dashes = smoothstep(thr, thr + 0.08, n);
-  dashes = max(dashes, smoothstep(0.84, 0.96, n) * uGlow);
-
-  float tear = hash(vec2(floor(x + stagger * 6.0), line));
-  dashes *= mix(0.18, 1.0, step(0.16, tear));
-
-  float fy = fract(y);
-  float thick = mix(0.4, 1.0, hash(vec2(line, 8.8)));
-  dashes *= step(fy, thick);
-  return clamp(dashes, 0.0, 1.0);
-}
-
 vec4 sampleTextRaw(vec2 uv) {
   float alive = inBounds(uv);
   vec4 t = texture2D(uText, clamp(uv, 0.0, 1.0));
@@ -211,10 +180,11 @@ vec4 sampleText(vec2 uv) {
   float motion = clamp(uTextInk, 0.0, 1.0);
   float inside = clamp(uTextInside, 0.0, 1.0);
   vec3 mint = vec3(0.847, 0.961, 0.871);
-  vec3 hot = vec3(0.98, 1.0, 1.0);
-  vec3 faded = vec3(0.82, 0.95, 0.98);
+  vec3 hot = vec3(0.97, 0.99, 1.0);
+  vec3 faded = vec3(1.0);
   vec3 insideCol = mix(mint, hot, motion);
   vec3 col = mix(faded, insideCol, inside);
+  col = mix(vec3(1.0), mix(col, vec3(0.96, 0.99, 1.0), uWash * 0.85), max(uWash, motion));
 
   vec2 dir = toAspect(uv - letterC);
   float ca = mix(0.0017, 0.0009, g);
@@ -232,7 +202,7 @@ vec4 sampleText(vec2 uv) {
   halo += sampleTextRaw(scaled + px * 0.72).a;
   halo += sampleTextRaw(scaled - px * 0.72).a;
   halo *= 0.167;
-  float bloom = (max(0.0, halo - tG.a) + halo * 0.22) * motion * inside;
+  float bloom = (max(0.0, halo - tG.a) + halo * mix(0.22, 0.42, uWash)) * mix(motion * inside, uWash, 0.55);
 
   vec4 text = vec4(col, tG.a);
   text.rgb += vec3(0.16, -0.03, -0.05) * (tR.a - tG.a);
@@ -243,9 +213,14 @@ vec4 sampleText(vec2 uv) {
 }
 
 vec3 phosphorBase() {
-  vec3 dark = vec3(0.02, 0.03, 0.035);
-  vec3 cyan = vec3(0.1, 0.46, 0.86);
-  return mix(dark, cyan, 0.12 + 0.88 * uGlow);
+  vec3 electricA = vec3(0.122, 0.247, 0.902);
+  vec3 electricB = vec3(0.141, 0.282, 0.941);
+  vec3 rest = mix(electricA, electricB, 0.4);
+  vec3 tealA = vec3(0.122, 0.722, 0.847);
+  vec3 tealB = vec3(0.165, 0.769, 0.902);
+  float swirl = fbm(gl_FragCoord.xy * 0.00105 + vec2(0.0, uTime * 0.035));
+  vec3 lit = mix(tealA, tealB, 0.28 + 0.5 * swirl);
+  return mix(rest, lit, uWash);
 }
 
 vec3 applyMoire(vec3 color, vec3 moire) {
@@ -253,21 +228,12 @@ vec3 applyMoire(vec3 color, vec3 moire) {
   vec3 mag = vec3(0.92, 0.16, 0.78);
   float magenta = moire.x * moire.z * (1.0 - moire.y * 0.62);
   float fringe = mix(0.08, 1.0, uMisalign);
-  color += mag * magenta * (0.18 + 0.82 * uGlow) * fringe;
-  color += cyan * moire.z * (0.08 + 0.28 * uGlow) * fringe;
-  color += moire * 0.025 * uMisalign;
-  return color;
-}
-
-vec3 screenAnalog(vec3 color, vec2 uv, float frame) {
-  float dashes = analogSnow(uv, frame);
-  vec3 flake = mix(vec3(0.7, 0.86, 1.0), vec3(0.95, 0.97, 1.0), dashes);
-  float amp = mix(0.25, 0.4, uGlow);
-  amp *= mix(0.92, 1.06, hash(vec2(frame, 0.4)));
-  vec3 snow = flake * dashes * amp;
-  color = 1.0 - (1.0 - color) * (1.0 - snow);
-  color += flake * dashes * mix(0.05, 0.16, uGlow);
-  return color;
+  float live = max(uGlow, uWash);
+  vec3 sharp = color;
+  sharp += mag * magenta * (0.18 + 0.82 * uGlow) * fringe * live;
+  sharp += cyan * moire.z * (0.08 + 0.28 * uGlow) * fringe * live;
+  sharp += moire * 0.025 * uMisalign * live;
+  return mix(sharp, color, uWash);
 }
 
 vec3 worldAt(vec2 fish, vec2 sensUv, float ang, float scl, float fCrt, float fSens) {
@@ -284,13 +250,16 @@ vec3 worldAt(vec2 fish, vec2 sensUv, float ang, float scl, float fCrt, float fSe
   vec3 moire = moireAt(crtUv, sensUv, ang, scl, fCrt, fSens);
 
   vec3 color = phosphorBase();
-  color = screenAnalog(color, qSurf, frame);
   color = applyMoire(color, moire);
 
-  float scan = 0.5 + 0.5 * sin(qSurf.y * uResolution.y * 3.14159265);
-  color *= 1.0 - scan * 0.1;
-
   return color;
+}
+
+vec4 sampleGuide(vec2 uv) {
+  float alive = inBounds(uv);
+  vec4 t = texture2D(uGuide, clamp(uv, 0.0, 1.0));
+  t *= alive;
+  return t;
 }
 
 void main() {
@@ -349,39 +318,52 @@ void main() {
   }
 
   float lum = dot(color, vec3(0.22, 0.48, 0.30));
-  color += color * smoothstep(0.18, 0.78, lum) * uGlow * vec3(0.4, 0.8, 1.05);
+  color += color * smoothstep(0.18, 0.78, lum) * uGlow * vec3(0.4, 0.8, 1.05) * (1.0 - uWash);
 
   float sphere = clamp(rN, 0.0, 1.0);
   float depth = sqrt(max(0.0, 1.0 - sphere * sphere));
   float rim = 1.0 - smoothstep(0.74, 1.0, edge);
   float vignette = mix(0.34, 1.0, pow(depth, 0.82) * mix(0.62, 1.0, rim));
-  color *= vignette;
+  vec3 edgeBlue = vec3(0.082, 0.188, 0.722);
+  vec3 restVig = mix(edgeBlue, color, vignette);
+  vec3 washEdge = vec3(0.227, 0.247, 0.816);
+  vec3 washVig = mix(washEdge, color, mix(0.42, 1.0, vignette));
+  color = mix(restVig, washVig, uWash);
   color *= 1.0 - uEnterDim;
 
   float wipe = 1.0 - smoothstep(0.0, 0.045, abs(uv.y - uEnterScan));
   color += vec3(0.72, 0.9, 1.0) * wipe * 0.4 * step(0.004, uEnterScan) * (1.0 - uEnterScan);
   color = mix(color, vec3(1.0), uEnterFlash);
 
-  float aspect = uResolution.x / max(uResolution.y, 1.0);
-  vec2 hd = (uv - uHoleCenter) * vec2(aspect, 1.0);
-  float dist = length(hd);
-  float radius = 0.35;
-  float dn = dist / max(radius, 0.0001);
-  float g = exp(-(dn * dn));
-  float gTail = exp(-(dn * dn) / 2.8);
-  float outer = clamp((dn - 0.7) / 0.3, 0.0, 1.0);
-  outer *= outer;
-  g = mix(g, gTail, outer);
-  float glow = clamp(uHoleAmount, 0.0, 1.0);
-  float reveal = g * glow;
+  vec2 winC = vec2(0.5, 0.62);
+  vec2 winR = vec2(0.44, 0.16);
+  vec2 sWin = (uv - winC) / winR;
+  float rr = length(sWin);
+  float z = sqrt(max(0.0, 1.0 - min(rr * rr, 1.0)));
+  float mask = exp(-(rr * rr) / 0.82);
+  mask *= 1.0 - smoothstep(0.92, 1.38, rr);
+  mask *= smoothstep(0.50, 0.57, uv.y);
+  mask *= clamp(uGuideAmount, 0.0, 1.0);
+
+  vec3 glass = mix(color, vec3(0.2, 0.52, 0.82), 0.32);
+  color = mix(color, glass, mask * 0.5);
+
+  float mag = mix(0.5, 1.18, 1.0 - z);
+  vec2 gUV = vec2(0.5, 0.84) + sWin * mag * vec2(0.24, 0.2);
+  float caAmt = smoothstep(0.42, 1.0, rr);
+  vec2 gDir = toAspect(sWin);
+  vec2 caOff = fromAspect(gDir / max(length(gDir), 0.00001) * 0.008 * caAmt);
+  vec4 gR = sampleGuide(gUV + caOff);
+  vec4 gG = sampleGuide(gUV);
+  vec4 gB = sampleGuide(gUV - caOff);
+  vec3 gCol = vec3(gR.r, gG.g, gB.b);
+  gCol += vec3(0.55, 0.22, 0.05) * max(gR.a - gG.a, 0.0) * caAmt;
+  gCol += vec3(0.2, 0.06, 0.48) * max(gB.a - gG.a, 0.0) * caAmt;
+  float gA = max(gG.a, max(gR.a, gB.a));
+  color = mix(color, gCol, mask * gA * 0.95);
 
   float frame = analogFrame();
-  float film = analogSnow(uv, frame) * 0.25;
-  vec3 aqua = vec3(0.435, 0.878, 1.0);
-  color = mix(color, mix(color, aqua, mix(0.2, 0.85, film)), reveal);
-
-  float alpha = mix(1.0, 0.3, reveal);
-  alpha *= 1.0 - uHoleExpand;
+  float alpha = 1.0 - uHoleExpand;
 
   vec2 qText = analogUv(fishG, frame);
   vec2 qSurf = 0.5 + (qText - 0.5) / max(1.0 + uEnterScatter * 0.35, 1.0);
@@ -418,6 +400,10 @@ export type MoireFrame = {
   enterBlur: number;
   enterCA: number;
   noiseSlow: number;
+  guideAmount: number;
+  wash: number;
+  bandShiftX: number;
+  bandShiftY: number;
 };
 
 export type TextBounds = {
@@ -437,6 +423,7 @@ export const DEFAULT_TEXT_BOUNDS: TextBounds = {
 export type CrtMoireGl = {
   render: (frame: MoireFrame) => void;
   resize: (cssWidth: number, cssHeight: number) => void;
+  setGuide: (programs: GuideProgram[]) => void;
   getTextBounds: () => TextBounds;
   destroy: () => void;
 };
@@ -550,6 +537,15 @@ export function createCrtMoireGl(canvas: HTMLCanvasElement): CrtMoireGl | null {
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 
+  const guideCanvas = document.createElement("canvas");
+  const guideCtx = guideCanvas.getContext("2d");
+  const guideTex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, guideTex);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
   const uResolution = gl.getUniformLocation(program, "uResolution");
   const uMouse = gl.getUniformLocation(program, "uMouse");
   const uTime = gl.getUniformLocation(program, "uTime");
@@ -574,12 +570,17 @@ export function createCrtMoireGl(canvas: HTMLCanvasElement): CrtMoireGl | null {
   const uEnterBlur = gl.getUniformLocation(program, "uEnterBlur");
   const uEnterCA = gl.getUniformLocation(program, "uEnterCA");
   const uNoiseSlow = gl.getUniformLocation(program, "uNoiseSlow");
+  const uGuide = gl.getUniformLocation(program, "uGuide");
+  const uGuideAmount = gl.getUniformLocation(program, "uGuideAmount");
+  const uWash = gl.getUniformLocation(program, "uWash");
+  const uBandShift = gl.getUniformLocation(program, "uBandShift");
 
   gl.clearColor(0, 0, 0, 0);
 
   let width = 1;
   let height = 1;
   let textBounds: TextBounds = {...DEFAULT_TEXT_BOUNDS};
+  let programs: GuideProgram[] = [];
 
   const uploadText = () => {
     if (!textCtx) {
@@ -598,6 +599,23 @@ export function createCrtMoireGl(canvas: HTMLCanvasElement): CrtMoireGl | null {
     );
   };
 
+  const uploadGuide = () => {
+    if (!guideCtx) {
+      return;
+    }
+    drawGuideTexture(guideCtx, guideCanvas.width, guideCanvas.height, programs);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, 1);
+    gl.bindTexture(gl.TEXTURE_2D, guideTex);
+    gl.texImage2D(
+      gl.TEXTURE_2D,
+      0,
+      gl.RGBA,
+      gl.RGBA,
+      gl.UNSIGNED_BYTE,
+      guideCanvas,
+    );
+  };
+
   const resize = (cssWidth: number, cssHeight: number) => {
     const dpr = window.devicePixelRatio || 1;
     const nextW = Math.max(1, Math.round(cssWidth * dpr));
@@ -613,8 +631,16 @@ export function createCrtMoireGl(canvas: HTMLCanvasElement): CrtMoireGl | null {
     const textScale = Math.min(2, 4096 / nextW, 4096 / nextH);
     textCanvas.width = Math.max(1, Math.round(nextW * textScale));
     textCanvas.height = Math.max(1, Math.round(nextH * textScale));
+    guideCanvas.width = Math.max(1, nextW);
+    guideCanvas.height = Math.max(1, nextH);
     gl.viewport(0, 0, width, height);
     uploadText();
+    uploadGuide();
+  };
+
+  const setGuide = (next: GuideProgram[]) => {
+    programs = next;
+    uploadGuide();
   };
 
   const getTextBounds = () => textBounds;
@@ -627,6 +653,8 @@ export function createCrtMoireGl(canvas: HTMLCanvasElement): CrtMoireGl | null {
     gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, textTex);
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, guideTex);
     gl.uniform2f(uResolution, width, height);
     gl.uniform2f(uMouse, frame.mouseX, frame.mouseY);
     gl.uniform1f(uTime, frame.time);
@@ -641,6 +669,10 @@ export function createCrtMoireGl(canvas: HTMLCanvasElement): CrtMoireGl | null {
     gl.uniform2f(uTextMin, textBounds.minX, 1.0 - textBounds.maxY);
     gl.uniform2f(uTextMax, textBounds.maxX, 1.0 - textBounds.minY);
     gl.uniform1i(uText, 0);
+    gl.uniform1i(uGuide, 1);
+    gl.uniform1f(uGuideAmount, frame.guideAmount);
+    gl.uniform1f(uWash, frame.wash);
+    gl.uniform2f(uBandShift, frame.bandShiftX, frame.bandShiftY);
     gl.uniform2f(uHoleCenter, frame.holeCenterX, frame.holeCenterY);
     gl.uniform1f(uHoleAmount, frame.holeAmount);
     gl.uniform1f(uHoleExpand, frame.holeExpand);
@@ -657,10 +689,11 @@ export function createCrtMoireGl(canvas: HTMLCanvasElement): CrtMoireGl | null {
   const destroy = () => {
     gl.deleteBuffer(buffer);
     gl.deleteTexture(textTex);
+    gl.deleteTexture(guideTex);
     gl.deleteProgram(program);
     gl.deleteShader(vs);
     gl.deleteShader(fs);
   };
 
-  return {render, resize, getTextBounds, destroy};
+  return {render, resize, setGuide, getTextBounds, destroy};
 }

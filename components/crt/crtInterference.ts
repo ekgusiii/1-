@@ -36,6 +36,10 @@ export type InterferenceState = {
   textK: number;
   textInk: number;
   textInside: number;
+  guideAmount: number;
+  wash: number;
+  bandShiftX: number;
+  bandShiftY: number;
 };
 
 export const INITIAL_INTERFERENCE: InterferenceState = {
@@ -62,6 +66,10 @@ export const INITIAL_INTERFERENCE: InterferenceState = {
   textK: 0,
   textInk: 0,
   textInside: 1,
+  guideAmount: 0,
+  wash: 0,
+  bandShiftX: 0,
+  bandShiftY: 0,
 };
 
 export type InterferenceTick = {
@@ -77,6 +85,10 @@ export type InterferenceTick = {
   textInside: number;
   holeX: number;
   holeY: number;
+  guideAmount: number;
+  wash: number;
+  bandShiftX: number;
+  bandShiftY: number;
 };
 
 function format(value: number, digits = 3) {
@@ -195,6 +207,20 @@ export function tickInterference(
     }
   }
 
+  if (state.speed > 0.04) {
+    state.wash = lerpToward(state.wash, 1, dt, 0.12);
+  } else {
+    state.wash *= Math.exp(-dt / 0.33);
+    if (state.wash < 0.002) {
+      state.wash = 0;
+    }
+  }
+
+  const shiftX = Math.max(-0.1, Math.min(0.1, state.vx / 1600)) * state.wash;
+  const shiftY = Math.max(-0.1, Math.min(0.1, state.vy / 1600)) * state.wash;
+  state.bandShiftX = lerpToward(state.bandShiftX, shiftX, dt, 0.22);
+  state.bandShiftY = lerpToward(state.bandShiftY, shiftY, dt, 0.22);
+
   state.fov = lerpToward(state.fov, 1.1 + state.glow * 0.15, dt, 0.38);
 
   let targetK = 0;
@@ -221,6 +247,19 @@ export function tickInterference(
     insideTarget = 1 - t * t * (3 - 2 * t);
   }
   state.textInside = lerpToward(state.textInside, insideTarget, dt, 0.4);
+
+  let guideTarget = 0;
+  if (!locked && pointer && width > 0 && height > 0) {
+    const aspect = width / height;
+    const sphereR = Math.hypot((nx - 0.5) * aspect, ny - 0.5);
+    const prox = clamp01(1 - sphereR / 0.48);
+    guideTarget = prox * state.glow;
+  }
+  const guideTau = state.guideAmount > guideTarget ? 0.55 : 0.14;
+  state.guideAmount = lerpToward(state.guideAmount, guideTarget, dt, guideTau);
+  if (state.guideAmount < 0.002 && guideTarget < 0.002) {
+    state.guideAmount = 0;
+  }
 
   const flicker =
     (Math.sin(t * 0.21 + state.phaseA * 0.12) * 0.55 +
@@ -270,5 +309,9 @@ export function tickInterference(
     textInside: clamp01(state.textInside),
     holeX: state.ax,
     holeY: state.ay,
+    guideAmount: clamp01(state.guideAmount),
+    wash: clamp01(state.wash),
+    bandShiftX: state.bandShiftX,
+    bandShiftY: state.bandShiftY,
   };
 }
