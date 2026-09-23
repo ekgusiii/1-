@@ -9,8 +9,13 @@ import {
   lerpToward,
   type Hotspot,
 } from "@/components/crt/crtAlignment";
+import {ArchiveDesktop} from "@/components/archive/ArchiveDesktop";
+import {ArchiveSequence} from "@/components/archive/ArchiveSequence";
+import type {ArchivePhase} from "@/components/archive/archiveConfig";
 import {
+  DWELL_TIME,
   INITIAL_ENTER,
+  enterVisuals,
   inEnterZone,
   tickEnter,
 } from "@/components/crt/crtEnter";
@@ -28,18 +33,18 @@ import {
   createGuideRefract,
   type GuideRefract,
 } from "@/components/crt/guideRefract";
-import { TvGuide } from "@/components/crt/TvGuide";
 import { MainFx } from "@/components/MainFx";
 import { publishEnter } from "@/lib/sound/soundBus";
 import type { Project } from "@/sanity/lib/queries";
 
-type CrtMode = "explore" | "guide" | "playback";
+type CrtMode = "explore" | "guide" | "playback" | "archive";
 
 type CrtScreenProps = {
   projects: Project[];
+  routeSlug?: string | null;
 };
 
-export function CrtScreen({ projects }: CrtScreenProps) {
+export function CrtScreen({ projects, routeSlug = null }: CrtScreenProps) {
   const glassRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const glRef = useRef<CrtMoireGl | null>(null);
@@ -51,14 +56,21 @@ export function CrtScreen({ projects }: CrtScreenProps) {
   const interferenceRef = useRef({...INITIAL_INTERFERENCE});
   const enterRef = useRef({...INITIAL_ENTER});
   const enterPhaseRef = useRef(INITIAL_ENTER.phase);
+  const lastVisRef = useRef(enterVisuals(0, 0));
+  const archiveOnRef = useRef(Boolean(routeSlug));
+  const fxRootRef = useRef<HTMLDivElement>(null);
   const nearestIdRef = useRef<string | null>(null);
   const hotspotsRef = useRef<Hotspot[]>([]);
   const startLoopRef = useRef<() => void>(() => {});
-  const modeRef = useRef<CrtMode>("explore");
+  const modeRef = useRef<CrtMode>(routeSlug ? "archive" : "explore");
   const hasProgramsRef = useRef(false);
   const [activeId, setActiveId] = useState<string | null>(null);
-  const [mode, setMode] = useState<CrtMode>("explore");
+  const [mode, setMode] = useState<CrtMode>(routeSlug ? "archive" : "explore");
   const [playing, setPlaying] = useState<GuideProgram | null>(null);
+  const [archiveOn, setArchiveOn] = useState(Boolean(routeSlug));
+  const [archivePhase, setArchivePhase] = useState<ArchivePhase | null>(
+    routeSlug ? "signal" : null,
+  );
 
   const mediaProjects = useMemo(
     () => projectsWithPreviewMedia(projects),
@@ -78,7 +90,7 @@ export function CrtScreen({ projects }: CrtScreenProps) {
 
   hotspotsRef.current = hotspots;
   modeRef.current = mode;
-  hasProgramsRef.current = programs.length > 0;
+  hasProgramsRef.current = mediaProjects.length > 0;
   programsRef.current = programs;
 
   useEffect(() => {
@@ -217,49 +229,61 @@ export function CrtScreen({ projects }: CrtScreenProps) {
       );
       apply(current.preview, current.misalign, extras.css);
 
-      const inZone =
-        !locked &&
-        !!pointer &&
-        !!rect &&
-        rect.width > 0 &&
-        rect.height > 0 &&
-        inEnterZone(pointer.x / rect.width, pointer.y / rect.height);
+      let vis = lastVisRef.current;
+      if (!archiveOnRef.current) {
+        const inZone =
+          !locked &&
+          !!pointer &&
+          !!rect &&
+          rect.width > 0 &&
+          rect.height > 0 &&
+          inEnterZone(pointer.x / rect.width, pointer.y / rect.height);
 
-      const entered = tickEnter(
-        enterRef.current,
-        dt,
-        inZone,
-        hasProgramsRef.current && !locked,
-      );
-      const vis = entered.visuals;
-      const prevPhase = enterPhaseRef.current;
-      const nextPhase = enterRef.current.phase;
-      if (prevPhase !== nextPhase) {
-        if (nextPhase === "dwell") {
-          publishEnter("hold");
-        } else if (
-          nextPhase === "idle" &&
-          (prevPhase === "dwell" || prevPhase === "inhale")
+        const entered = tickEnter(
+          enterRef.current,
+          dt,
+          inZone,
+          hasProgramsRef.current && !locked,
+        );
+        vis = entered.visuals;
+        lastVisRef.current = vis;
+        const prevPhase = enterPhaseRef.current;
+        const nextPhase = enterRef.current.phase;
+        if (prevPhase !== nextPhase) {
+          if (nextPhase === "dwell") {
+            publishEnter("hold");
+          } else if (
+            nextPhase === "idle" &&
+            (prevPhase === "dwell" || prevPhase === "inhale")
+          ) {
+            publishEnter("cancel");
+          }
+        }
+        enterPhaseRef.current = nextPhase;
+
+        if (
+          prevPhase === "dwell" &&
+          nextPhase === "inhale" &&
+          modeRef.current === "explore" &&
+          hasProgramsRef.current
         ) {
-          publishEnter("cancel");
-        } else if (nextPhase === "surge") {
-          publishEnter("flash");
-        } else if (nextPhase === "land") {
-          publishEnter("land");
+          enterRef.current = {
+            phase: "dwell",
+            dwell: DWELL_TIME,
+            t: 0,
+          };
+          enterPhaseRef.current = "dwell";
+          archiveOnRef.current = true;
+          setArchiveOn(true);
+          setArchivePhase("moire");
+          if (window.history.state?.crtView !== "archive") {
+            window.history.pushState(
+              {crtView: "archive"},
+              "",
+              window.location.href,
+            );
+          }
         }
-      }
-      enterPhaseRef.current = nextPhase;
-
-      if (
-        entered.finished &&
-        modeRef.current === "explore" &&
-        hasProgramsRef.current
-      ) {
-        if (window.history.state?.crtView !== "guide") {
-          window.history.pushState({crtView: "guide"}, "", window.location.href);
-        }
-        modeRef.current = "guide";
-        setMode("guide");
       }
 
       const holeLock = locked ? 1 : vis.holeLock;
@@ -357,8 +381,12 @@ export function CrtScreen({ projects }: CrtScreenProps) {
     };
 
     const onPopState = () => {
+      if (archiveOnRef.current) {
+        return;
+      }
       enterRef.current = {...INITIAL_ENTER};
       enterPhaseRef.current = INITIAL_ENTER.phase;
+      lastVisRef.current = enterVisuals(0, 0);
       pointerRef.current = null;
       setPlaying(null);
       setMode("explore");
@@ -374,6 +402,9 @@ export function CrtScreen({ projects }: CrtScreenProps) {
   }, [mode]);
 
   const updatePointer = (clientX: number, clientY: number) => {
+    if (archiveOnRef.current) {
+      return;
+    }
     const node = glassRef.current;
     if (!node) {
       return;
@@ -399,57 +430,82 @@ export function CrtScreen({ projects }: CrtScreenProps) {
     startLoopRef.current();
   };
 
+  const showExploreFx =
+    mode === "explore" &&
+    (archivePhase === null || archivePhase === "moire");
+
+  const handleArchivePhase = (next: ArchivePhase) => {
+    setArchivePhase(next);
+    if (next !== "moire" && modeRef.current === "explore") {
+      modeRef.current = "archive";
+      setMode("archive");
+    }
+  };
+
   return (
-    <main className="stage">
+    <main className="stage" data-archive-phase={archivePhase ?? "off"}>
       <div
-        ref={glassRef}
-        className={
-          programs.length > 0
-            ? "crt crt__glass crt__glass--has-guide"
-            : "crt crt__glass"
-        }
-        data-project-count={projects.length}
-        data-mode={mode}
-        onPointerEnter={(event) => {
-          updatePointer(event.clientX, event.clientY);
-        }}
-        onPointerMove={(event) => {
-          updatePointer(event.clientX, event.clientY);
-        }}
+        ref={fxRootRef}
+        className="archive-fx-root"
+        style={{position: "fixed", inset: 0, width: "100vw", height: "100dvh"}}
       >
-        {programs.length > 0 && mode !== "playback" ? (
-          <TvGuide programs={programs} onSelect={openProgram} />
-        ) : null}
+        <div
+          ref={glassRef}
+          className={
+            programs.length > 0
+              ? "crt crt__glass crt__glass--has-guide"
+              : "crt crt__glass"
+          }
+          data-project-count={projects.length}
+          data-mode={mode}
+          onPointerEnter={(event) => {
+            updatePointer(event.clientX, event.clientY);
+          }}
+          onPointerMove={(event) => {
+            updatePointer(event.clientX, event.clientY);
+          }}
+        >
+          <div className="crt__content">
+            {mode === "playback" && playing ? (
+              <div className="crt__media crt__media--playback">
+                <video
+                  key={playing.id}
+                  src={playing.url}
+                  autoPlay
+                  playsInline
+                  aria-label={playing.title}
+                  onEnded={returnToGuide}
+                />
+                <button
+                  type="button"
+                  className="crt__back"
+                  onClick={returnToGuide}
+                >
+                  BACK
+                </button>
+              </div>
+            ) : null}
 
-        <div className="crt__content">
-          {mode === "playback" && playing ? (
-            <div className="crt__media crt__media--playback">
-              <video
-                key={playing.id}
-                src={playing.url}
-                autoPlay
-                playsInline
-                aria-label={playing.title}
-                onEnded={returnToGuide}
-              />
-              <button
-                type="button"
-                className="crt__back"
-                onClick={returnToGuide}
-              >
-                BACK
-              </button>
-            </div>
+            <h1 className="crt__welcome">WELCOME</h1>
+          </div>
+
+          {showExploreFx ? (
+            <canvas ref={canvasRef} className="crt__gl" aria-hidden="true" />
           ) : null}
-
-          <h1 className="crt__welcome">WELCOME</h1>
         </div>
-
-        {mode === "explore" ? (
-          <canvas ref={canvasRef} className="crt__gl" aria-hidden="true" />
-        ) : null}
+        {showExploreFx ? <MainFx /> : null}
       </div>
-      {mode === "explore" ? <MainFx /> : null}
+      {archiveOn ? (
+        <ArchiveSequence
+          fxRootRef={fxRootRef}
+          onPhaseChange={handleArchivePhase}
+          preset={routeSlug ? "signal" : undefined}
+        >
+          {archivePhase === "signal" ? (
+            <ArchiveDesktop projects={projects} openSlug={routeSlug} />
+          ) : null}
+        </ArchiveSequence>
+      ) : null}
     </main>
   );
 }

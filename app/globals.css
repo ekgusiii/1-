@@ -505,6 +505,12 @@ body {
   animation: sound-tune-blink 2.6s ease-in-out infinite;
 }
 
+body.is-archive .sound-ui__tune,
+body[data-crt="archive"] .sound-ui__tune,
+body:has(.stage[data-archive-phase]:not([data-archive-phase="off"])) .sound-ui__tune {
+  display: none !important;
+}
+
 .sound-ui__toggle {
   pointer-events: auto;
   position: absolute;

@@ -1,0 +1,630 @@
+.arc-root {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.arc-kill {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 2px;
+  background: #f4f7ff;
+  box-shadow: 0 0 10px 2px rgba(244, 247, 255, 0.85);
+  transform: translateY(-50%) scaleY(1);
+  opacity: 0;
+}
+
+.arc-stage {
+  position: absolute;
+  inset: 0;
+  background: #050608;
+}
+
+.arc-sky {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+  overflow: hidden;
+  background: #6b7380;
+  filter: none;
+}
+
+.arc-sky__media {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.arc-sky canvas.arc-sky__media {
+  width: 100%;
+  height: 100%;
+}
+
+.arc-sky__track {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 8px;
+  top: 110%;
+  opacity: 0;
+  pointer-events: none;
+  background:
+    repeating-linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.28) 0,
+      rgba(0, 0, 0, 0.35) 2px,
+      transparent 3px,
+      rgba(255, 255, 255, 0.12) 6px
+    );
+  mix-blend-mode: overlay;
+}
+
+.arc-vignette--sky {
+  background: radial-gradient(
+    ellipse 82% 78% at 50% 48%,
+    transparent 52%,
+    rgba(0, 0, 0, 0.18) 100%
+  );
+}
+
+.arc-signal-host {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.arc-signal-low {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 50vw;
+  height: 50vh;
+  transform: scale(2);
+  transform-origin: 0 0;
+}
+
+.arc-signal {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.arc-barrel {
+  filter: url("#arc-barrel");
+}
+
+.arc-flash {
+  position: absolute;
+  left: 18%;
+  height: 1px;
+  pointer-events: none;
+  mix-blend-mode: screen;
+}
+
+.arc-scan {
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0.03) 0,
+    rgba(255, 255, 255, 0.03) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+  opacity: 0.22;
+}
+
+.arc-noise {
+  position: absolute;
+  inset: -8%;
+  background-image:
+    repeating-linear-gradient(
+      0deg,
+      rgba(255, 255, 255, 0.04) 0,
+      transparent 1px,
+      transparent 2px
+    ),
+    repeating-linear-gradient(
+      90deg,
+      rgba(40, 220, 200, 0.03) 0,
+      transparent 1px,
+      transparent 3px
+    );
+  mix-blend-mode: overlay;
+}
+
+.arc-vignette {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    ellipse 70% 64% at 50% 50%,
+    transparent 28%,
+    rgba(0, 0, 0, 0.62) 68%,
+    rgba(0, 0, 0, 0.96) 100%
+  );
+}
+
+.arc-vignette--hard {
+  background:
+    radial-gradient(circle at 0% 0%, #050608 0%, transparent 14%),
+    radial-gradient(circle at 100% 0%, #050608 0%, transparent 14%),
+    radial-gradient(circle at 0% 100%, #050608 0%, transparent 14%),
+    radial-gradient(circle at 100% 100%, #050608 0%, transparent 14%),
+    radial-gradient(
+      ellipse 92% 88% at 50% 50%,
+      transparent 78%,
+      rgba(5, 6, 8, 0.42) 90%,
+      #050608 100%
+    );
+}
+
+.arc-crt {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+}
+
+.arc-crt__scan,
+.arc-crt__rgb,
+.arc-crt__noise {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.arc-crt__scan {
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(0, 0, 0, 0.28) 0,
+    rgba(0, 0, 0, 0.28) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+  mix-blend-mode: multiply;
+}
+
+.arc-crt__rgb {
+  box-shadow:
+    inset 1.6px 0 0 rgba(255, 48, 80, 0.16),
+    inset -1.6px 0 0 rgba(40, 230, 255, 0.14);
+  mix-blend-mode: screen;
+  opacity: 0.55;
+}
+
+.arc-crt__noise {
+  inset: -6%;
+  background-image:
+    repeating-linear-gradient(
+      0deg,
+      rgba(180, 255, 230, 0.045) 0,
+      transparent 1px,
+      transparent 2px
+    ),
+    repeating-linear-gradient(
+      90deg,
+      rgba(255, 90, 160, 0.03) 0,
+      transparent 1px,
+      transparent 3px
+    );
+  mix-blend-mode: screen;
+  opacity: 0.22;
+}
+
+.arc-desk {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+  perspective: 1200px;
+  perspective-origin: 50% 30%;
+  transform-style: preserve-3d;
+}
+
+.arc-desk--settle {
+  animation: arc-desk-settle var(--arc-settle-ms, 180ms) ease-out;
+}
+
+.arc-slide-defs {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+}
+
+.arc-win {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  pointer-events: auto;
+  border: 1px solid #fff;
+  box-shadow: 0 0 8px rgba(255, 255, 255, 0.28);
+  background: #050608;
+  color: #fff;
+  transition: none;
+  transform-origin: center bottom;
+  z-index: var(--arc-tune-zi, 1);
+}
+
+.arc-win--slide {
+  animation:
+    arc-win-slide var(--arc-slide-ms) var(--arc-slide-ease) both,
+    arc-win-slide-fade calc(var(--arc-slide-ms) * var(--arc-slide-fade)) linear both;
+}
+
+.arc-win--rise {
+  transition: transform 450ms cubic-bezier(0, 0, 0.2, 1);
+}
+
+.arc-win--sink {
+  transition: transform 350ms cubic-bezier(0, 0, 0.2, 1);
+}
+
+.arc-win--flash {
+  box-shadow:
+    0 0 0 1px #fff,
+    4px 0 0 rgba(255, 36, 78, 0.75),
+    -4px 0 0 rgba(28, 220, 255, 0.75);
+}
+
+.arc-portal--desk,
+.arc-portal--stand,
+.arc-portal--detail,
+.arc-crt-top {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+}
+
+.arc-portal--desk {
+  z-index: 10020;
+  perspective: 1200px;
+  perspective-origin: 50% 30%;
+  transform-style: preserve-3d;
+}
+
+.arc-portal--stand {
+  z-index: 10040;
+  perspective: 1200px;
+  perspective-origin: 50% 30%;
+}
+
+.arc-portal--detail {
+  z-index: 10050;
+}
+
+.arc-portal--desk .arc-win,
+.arc-portal--stand .arc-win,
+.arc-portal--detail .arc-win {
+  pointer-events: auto;
+}
+
+.arc-crt-top {
+  z-index: 10060;
+}
+
+.arc-win--glitch {
+  animation: arc-win-slice 120ms steps(2, end);
+}
+
+.arc-win__bar {
+  display: flex;
+  align-items: center;
+  height: 18px;
+  flex: 0 0 18px;
+  background: #e8e8e0;
+  color: #111;
+}
+
+.arc-win--live:hover .arc-win__bar {
+  background: #111;
+  color: #e8e8e0;
+}
+
+.arc-win--tune {
+  animation: arc-win-jitter 90ms steps(2, end) infinite;
+}
+
+.arc-win--tune-lock {
+  animation: arc-tune-lock var(--arc-tune-lock-ms, 72ms) steps(3, end);
+}
+
+.arc-win--tune-lock .arc-win__rgb {
+  opacity: 1;
+  animation: arc-tune-rgb var(--arc-tune-lock-ms, 72ms) steps(2, end);
+}
+
+.arc-win--tune-lock .arc-win__sig {
+  opacity: 0.55;
+}
+
+@keyframes arc-tune-lock {
+  0% {
+    filter: blur(0.8px) contrast(1.2) saturate(1.4);
+  }
+  40% {
+    filter: blur(0) contrast(1.18) saturate(0.72);
+  }
+  100% {
+    filter: blur(0) contrast(1.06) saturate(1);
+  }
+}
+
+@keyframes arc-tune-rgb {
+  0% {
+    box-shadow:
+      3px 0 0 rgba(255, 36, 78, 0.75),
+      -3px 0 0 rgba(28, 220, 255, 0.75);
+  }
+  50% {
+    box-shadow:
+      -2px 0 0 rgba(255, 36, 78, 0.75),
+      2px 0 0 rgba(28, 220, 255, 0.75);
+  }
+  100% {
+    box-shadow: none;
+  }
+}
+
+.arc-win__body {
+  position: relative;
+}
+
+.arc-win__media {
+  position: absolute;
+  inset: 0;
+}
+
+.arc-win__noise,
+.arc-win__sig,
+.arc-win__scan,
+.arc-win__rgb,
+.arc-win__blank,
+.arc-win__idle {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.arc-win__sig {
+  opacity: 0;
+  background:
+    repeating-linear-gradient(
+      90deg,
+      rgba(0, 0, 0, 0.45) 0,
+      transparent 1px,
+      transparent 3px
+    ),
+    repeating-linear-gradient(
+      0deg,
+      rgba(200, 255, 230, 0.12) 0,
+      transparent 1px,
+      transparent 2px
+    );
+  mix-blend-mode: screen;
+}
+
+.arc-win__scan {
+  opacity: 0.08;
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0.08) 0,
+    rgba(255, 255, 255, 0.08) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+}
+
+.arc-win[data-focus="1"] .arc-win__scan {
+  opacity: 0.07;
+}
+
+.arc-win__rgb {
+  opacity: 0;
+  mix-blend-mode: screen;
+}
+
+.arc-win__blank {
+  display: grid;
+  place-items: center;
+  background:
+    #050608
+    repeating-linear-gradient(
+      90deg,
+      rgba(180, 255, 230, 0.16) 0,
+      transparent 1px,
+      transparent 2px
+    );
+  color: rgba(255, 255, 255, 0.72);
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  opacity: 0;
+}
+
+.arc-win[data-nosignal="1"] .arc-win__blank {
+  opacity: 1;
+}
+
+.arc-win[data-focus="1"] .arc-win__idle {
+  opacity: 0.05;
+}
+
+.arc-win__noise {
+  background:
+    repeating-linear-gradient(
+      0deg,
+      rgba(220, 255, 240, 0.16) 0,
+      transparent 1px,
+      transparent 2px
+    ),
+    repeating-linear-gradient(
+      90deg,
+      rgba(0, 0, 0, 0.35) 0,
+      transparent 1px,
+      transparent 3px
+    );
+  mix-blend-mode: screen;
+}
+
+.arc-win__idle {
+  opacity: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    rgba(180, 255, 230, 0.14) 0,
+    transparent 1px,
+    transparent 2px
+  );
+  mix-blend-mode: screen;
+}
+
+.arc-desk[data-still="1"] .arc-win__idle {
+  opacity: 0.14;
+}
+
+.arc-win video[data-shake="1"] {
+  transform: translateX(3px);
+}
+
+.arc-win__title,
+.arc-win__x {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  cursor: pointer;
+}
+
+.arc-win__title {
+  flex: 1;
+  height: 100%;
+  padding: 0 8px;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-align: left;
+}
+
+.arc-win__x {
+  width: 22px;
+  height: 100%;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.arc-win__body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  background: #000;
+}
+
+.arc-win__body video,
+.arc-win__body img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.arc-win__empty {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 11px;
+  opacity: 0.7;
+}
+
+.arc-win__stat {
+  flex: 0 0 18px;
+  padding: 0 8px;
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.7);
+  line-height: 18px;
+}
+
+.arc-detail {
+  display: grid;
+  grid-template-columns: minmax(160px, 28%) 1fr;
+  gap: 12px;
+  min-height: 100%;
+  padding: 12px;
+}
+
+.arc-detail__meta {
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 12px;
+}
+
+.arc-detail__meta h2 {
+  margin: 0 0 8px;
+  font-size: 16px;
+}
+
+.arc-detail__media video,
+.arc-detail__media img {
+  width: 100%;
+  height: auto;
+  margin-bottom: 12px;
+  object-fit: contain;
+}
+
+@keyframes arc-win-slide {
+  from {
+    translate: 0 var(--arc-slide-from);
+  }
+  to {
+    translate: 0 0;
+  }
+}
+
+@keyframes arc-win-slide-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes arc-desk-settle {
+  0%,
+  100% {
+    translate: 0 0;
+  }
+  40% {
+    translate: 0 var(--arc-settle-px, 1px);
+  }
+}
+
+@keyframes arc-win-jitter {
+  0% {
+    translate: -6px 0;
+  }
+  100% {
+    translate: 6px 0;
+  }
+}
+
+@keyframes arc-win-slice {
+  0% {
+    clip-path: inset(0 0 62% 0);
+    transform: translateX(-14px);
+  }
+  50% {
+    clip-path: inset(38% 0 0 0);
+    transform: translateX(18px);
+  }
+  100% {
+    clip-path: inset(0);
+    transform: none;
+  }
+}

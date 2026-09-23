@@ -15,6 +15,7 @@ const vt323 = VT323({
 export function SoundController() {
   const [started, setStarted] = useState(false);
   const [muted, setMuted] = useState(false);
+  const [archive, setArchive] = useState(false);
 
   const tuneIn = useCallback(async () => {
     const engine = SoundEngine.get();
@@ -33,6 +34,16 @@ export function SoundController() {
     };
   }, [tuneIn]);
 
+  useEffect(() => {
+    const read = () => {
+      setArchive(document.body.classList.contains("is-archive"));
+    };
+    read();
+    const watch = new MutationObserver(read);
+    watch.observe(document.body, {attributes: true, attributeFilter: ["class", "data-crt"]});
+    return () => watch.disconnect();
+  }, []);
+
   const toggle = async () => {
     const engine = SoundEngine.get();
     if (!engine.isStarted) {
@@ -46,7 +57,7 @@ export function SoundController() {
 
   return (
     <div className={`${vt323.variable} sound-ui`}>
-      {!started ? (
+      {!started && !archive ? (
         <p className="sound-ui__tune">▸ CLICK TO TUNE IN</p>
       ) : null}
       {started ? (
