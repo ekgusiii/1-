@@ -109,6 +109,26 @@ export function idleLook(item: ArchiveItem): TuneLook {
   };
 }
 
+export function mixLooks(a: TuneLook, b: TuneLook, t: number): TuneLook {
+  const u = Math.min(1, Math.max(0, t));
+  return {
+    blur: mix(a.blur, b.blur, u),
+    opacity: mix(a.opacity, b.opacity, u),
+    contrast: mix(a.contrast, b.contrast, u),
+    sat: mix(a.sat, b.sat, u),
+    rgb: mix(a.rgb, b.rgb, u),
+    noise: mix(a.noise, b.noise, u),
+    scale: mix(a.scale, b.scale, u),
+    z: mix(a.z, b.z, u),
+    zIndex: Math.round(mix(a.zIndex, b.zIndex, u)),
+  };
+}
+
+export function autoLayEaseT(t: number) {
+  const u = Math.min(1, Math.max(0, t));
+  return 1 - (1 - u) ** 3.2;
+}
+
 export function approachLook(t: number): TuneLook {
   const u = Math.min(1, Math.max(0, t));
   const idle = tuneIdleLook();

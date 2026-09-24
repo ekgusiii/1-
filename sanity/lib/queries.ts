@@ -37,6 +37,10 @@ export const PROJECTS_QUERY = defineQuery(/* groq */ `
       true => coalesce(previewVideo[] { ${previewVideoFields} }, [])
     ),
     shortDescription,
+    description,
+    role,
+    tools,
+    client,
     order
   }
 `);
@@ -77,5 +81,9 @@ export type Project = {
   previewImage: PreviewImage[];
   previewVideo: PreviewVideo[];
   shortDescription: string | null;
+  description: string | null;
+  role: string | null;
+  tools: string | null;
+  client: string | null;
   order: number | null;
 };

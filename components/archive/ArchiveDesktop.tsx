@@ -1,16 +1,18 @@
 "use client";
 
-import {useEffect, useMemo, useRef, useState} from "react";
+import {useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent} from "react";
 import {createPortal} from "react-dom";
 import {useRouter} from "next/navigation";
 
 import {ARCHIVE} from "@/components/archive/archiveConfig";
-import {SLIDE_EASE, slideBlurAt} from "@/components/archive/archiveSpring";
+import {slideBlurAt} from "@/components/archive/archiveSpring";
 import {buildArchiveItems, type ArchiveItem} from "@/components/archive/archiveItems";
 import {buildSpawnPlan} from "@/components/archive/archiveSpawn";
 import {
   approachLook,
+  autoLayEaseT,
   idleLook,
+  mixLooks,
   nodeCenter,
   paintTune,
   playTuneLock,
@@ -19,7 +21,14 @@ import {
   tuneBgLook,
   type TuneRank,
 } from "@/components/archive/archiveTune";
-import {cueArchiveVideo, driveVideos, type VideoBind} from "@/components/archive/archiveVideos";
+import {
+  cueArchiveVideo,
+  driveVideos,
+  holdArchiveVideo,
+  releaseArchiveVideo,
+  type VideoBind,
+} from "@/components/archive/archiveVideos";
+import {InfoPanel} from "@/components/archive/InfoPanel";
 import type {Project} from "@/sanity/lib/queries";
 
 type Rect = {x: number; y: number; w: number; h: number};
@@ -58,6 +67,16 @@ function fullRect(): Rect {
   };
 }
 
+function stoodBox(rect: Rect): Rect {
+  const scale = ARCHIVE.standScale;
+  return {
+    x: rect.x + rect.w * 0.5 - (rect.w * scale) * 0.5,
+    y: rect.y + rect.h * 0.5 - (rect.h * scale) * 0.5,
+    w: rect.w * scale,
+    h: rect.h * scale,
+  };
+}
+
 function itemRect(item: ArchiveItem): Rect {
   const vw = window.innerWidth;
   const vh = window.visualViewport?.height ?? window.innerHeight;
@@ -69,8 +88,16 @@ function itemRect(item: ArchiveItem): Rect {
   };
 }
 
-function label(title: string) {
-  return title.toUpperCase().endsWith(".MOV") ? title.toUpperCase() : `${title.toUpperCase()}.MOV`;
+function padClip(value: number) {
+  return String(value).padStart(2, "0");
+}
+
+function label(item: ArchiveItem) {
+  const title = (item.title ?? "").toUpperCase();
+  if (item.clickable && item.clipIndex) {
+    return `${title} — ${padClip(item.clipIndex)}`;
+  }
+  return title.endsWith(".MOV") ? title : `${title}.MOV`;
 }
 
 function poseTransform(item: ArchiveItem, scale: number, stood: boolean, detail: boolean) {
@@ -80,7 +107,7 @@ function poseTransform(item: ArchiveItem, scale: number, stood: boolean, detail:
   if (stood) {
     return `rotateX(0deg) rotateZ(0deg) scale(${ARCHIVE.standScale})`;
   }
-  return `rotateX(${item.tiltX}deg) rotateZ(${item.tiltZ}deg) translateZ(var(--arc-tune-z, 0px)) scale(calc(${scale} * var(--arc-tune-scale, 1)))`;
+  return `rotateX(${item.tiltX}deg) rotateZ(${item.tiltZ}deg) translateZ(var(--arc-tune-z, 0px)) scale(calc(${scale} * var(--arc-tune-scale, 1))) translateY(var(--arc-slide-y, 0px))`;
 }
 
 type TuneEngine = {
@@ -106,8 +133,28 @@ function applyTune(
   hoverId: string | null,
   stoodId: string | null,
   engine: TuneEngine,
+  returningId: string | null,
+  returnT: number,
 ) {
   const visible = visibleItems(items, lockMap);
+  if (returningId) {
+    const t = autoLayEaseT(returnT);
+    const from = items.find((item) => item.id === returningId);
+    if (from) {
+      paintTune(nodes.get(returningId), mixLooks(tuneActiveLook(), idleLook(from), t));
+    }
+    engine.ranks.forEach((row) => {
+      const item = items.find((entry) => entry.id === row.id);
+      if (item) {
+        paintTune(nodes.get(row.id), mixLooks(tuneBgLook(row.band), idleLook(item), t));
+      }
+    });
+    if (t >= 1) {
+      engine.activeId = null;
+      engine.ranks = [];
+    }
+    return;
+  }
   if (!live) {
     engine.timers.forEach((id) => window.clearTimeout(id));
     engine.timers = [];
@@ -216,6 +263,35 @@ function lockLook(item: ArchiveItem, step: LockStep) {
   };
 }
 
+function measureDeskSlot(
+  item: ArchiveItem,
+  plane: HTMLElement,
+): Rect {
+  const rect = itemRect(item);
+  const ghost = document.createElement("div");
+  ghost.style.cssText = [
+    "position:absolute",
+    `left:${rect.x}px`,
+    `top:${rect.y}px`,
+    `width:${rect.w}px`,
+    `height:${rect.h}px`,
+    `transform:rotateX(${item.tiltX}deg) rotateZ(${item.tiltZ}deg)`,
+    "transform-origin:center bottom",
+    "pointer-events:none",
+    "visibility:hidden",
+  ].join(";");
+  plane.appendChild(ghost);
+  const box = ghost.getBoundingClientRect();
+  ghost.remove();
+  return {x: box.left, y: box.top, w: box.width, h: box.height};
+}
+
+function flipInvert(first: DOMRect, last: Rect) {
+  const sx = first.width / Math.max(last.w, 1);
+  const sy = first.height / Math.max(last.h, 1);
+  return `translate(${first.left - last.x}px, ${first.top - last.y}px) scale(${sx}, ${sy})`;
+}
+
 function blurFilterId(id: string) {
   return `arc-mblur-${id.replace(/[^a-zA-Z0-9_-]/g, "_")}`;
 }
@@ -234,6 +310,11 @@ export function ArchiveDesktop({projects, openSlug}: ArchiveDesktopProps) {
   const [lockMap, setLockMap] = useState<Record<string, LockStep>>({});
   const [tuned, setTuned] = useState(false);
   const [stoodId, setStoodId] = useState<string | null>(null);
+  const [returningId, setReturningId] = useState<string | null>(null);
+  const [flip, setFlip] = useState<{id: string; last: Rect; invert: string} | null>(null);
+  const [flipPlay, setFlipPlay] = useState(false);
+  const [panelOpen, setPanelOpen] = useState(false);
+  const [openId, setOpenId] = useState<string | null>(null);
   const [sinkingId, setSinkingId] = useState<string | null>(null);
   const [flashId, setFlashId] = useState<string | null>(null);
   const [standReady, setStandReady] = useState(false);
@@ -250,6 +331,9 @@ export function ArchiveDesktop({projects, openSlug}: ArchiveDesktopProps) {
   const videosRef = useRef(new Map<string, VideoBind>());
   const pointerRef = useRef({x: 0, y: 0, speed: 0, t: 0});
   const nodesRef = useRef(new Map<string, HTMLElement>());
+  const viewRef = useRef(new Set<string>());
+  const ioRef = useRef<IntersectionObserver | null>(null);
+  const [viewRev, setViewRev] = useState(0);
   const tuneRef = useRef<TuneEngine>({
     activeId: null,
     approachId: null,
@@ -258,8 +342,21 @@ export function ArchiveDesktop({projects, openSlug}: ArchiveDesktopProps) {
   });
   const stoodRef = useRef<string | null>(null);
   const hoverRef = useRef<{id: string; t: number} | null>(null);
+  const panelOpenRef = useRef(false);
+  const panelTimerRef = useRef(0);
+  const panelGraceRef = useRef(0);
+  const panelOverRef = useRef({win: false, panel: false});
+  const autoLayTimerRef = useRef(0);
+  const autoLayWaitRef = useRef(0);
+  const returnLockRef = useRef(false);
+  const clickStandRef = useRef<string | null>(null);
+  const returningRef = useRef<string | null>(null);
+  const returnStartRef = useRef(0);
+  panelOpenRef.current = panelOpen;
+  returningRef.current = returningId;
   const standLockRef = useRef(false);
   const standWindowRef = useRef<(id: string) => void>(() => {});
+  const beginAutoReturnRef = useRef<(id: string) => void>(() => {});
   const itemsRef = useRef(items);
   const lockMapRef = useRef(lockMap);
   const tunedRef = useRef(tuned);
@@ -282,9 +379,129 @@ export function ArchiveDesktop({projects, openSlug}: ArchiveDesktopProps) {
     return () => window.cancelAnimationFrame(frame);
   }, [stoodId]);
 
+  const clearPanelTimers = () => {
+    if (panelTimerRef.current) {
+      window.clearTimeout(panelTimerRef.current);
+      panelTimerRef.current = 0;
+    }
+    if (panelGraceRef.current) {
+      window.clearTimeout(panelGraceRef.current);
+      panelGraceRef.current = 0;
+    }
+  };
+
+  const clearAutoLayTimers = () => {
+    if (autoLayTimerRef.current) {
+      window.clearTimeout(autoLayTimerRef.current);
+      autoLayTimerRef.current = 0;
+    }
+    if (autoLayWaitRef.current) {
+      window.clearTimeout(autoLayWaitRef.current);
+      autoLayWaitRef.current = 0;
+    }
+  };
+
+  const enterPanelZone = (zone: "win" | "panel") => {
+    panelOverRef.current[zone] = true;
+    if (panelGraceRef.current) {
+      window.clearTimeout(panelGraceRef.current);
+      panelGraceRef.current = 0;
+    }
+    if (!returnLockRef.current) {
+      clearAutoLayTimers();
+    }
+    if (returnLockRef.current || panelOpenRef.current || panelTimerRef.current) {
+      return;
+    }
+    panelTimerRef.current = window.setTimeout(() => {
+      panelTimerRef.current = 0;
+      setPanelOpen(true);
+    }, ARCHIVE.infoDwellMs);
+  };
+
+  const leavePanelZone = (zone: "win" | "panel") => {
+    panelOverRef.current[zone] = false;
+    if (panelOverRef.current.win || panelOverRef.current.panel) {
+      return;
+    }
+    clearPanelTimers();
+    if (returnLockRef.current || !stoodRef.current) {
+      return;
+    }
+    panelGraceRef.current = window.setTimeout(() => {
+      panelGraceRef.current = 0;
+      if (panelOverRef.current.win || panelOverRef.current.panel || returnLockRef.current) {
+        return;
+      }
+      const id = stoodRef.current;
+      if (!id) {
+        return;
+      }
+      autoLayTimerRef.current = window.setTimeout(() => {
+        autoLayTimerRef.current = 0;
+        if (panelOverRef.current.win || panelOverRef.current.panel) {
+          return;
+        }
+        beginAutoReturnRef.current(id);
+      }, ARCHIVE.autoLayMs);
+    }, ARCHIVE.infoLeaveGraceMs);
+  };
+
+  useEffect(() => {
+    if (!stoodId || openSlug) {
+      clearPanelTimers();
+      if (!returningRef.current) {
+        clearAutoLayTimers();
+      }
+      panelOverRef.current = {win: false, panel: false};
+      setPanelOpen(false);
+      return;
+    }
+    if (hoverRef.current?.id === stoodId) {
+      enterPanelZone("win");
+    }
+  }, [stoodId, openSlug]);
+
   useEffect(() => {
     setReady(true);
   }, []);
+
+  useEffect(() => {
+    if (!ready) {
+      return;
+    }
+    const margin = `${Math.round(ARCHIVE.videoViewMargin * 100)}%`;
+    const io = new IntersectionObserver(
+      (entries) => {
+        let changed = false;
+        for (const entry of entries) {
+          const id = (entry.target as HTMLElement).dataset.win;
+          if (!id) {
+            continue;
+          }
+          const on = entry.isIntersecting;
+          const has = viewRef.current.has(id);
+          if (on && !has) {
+            viewRef.current.add(id);
+            changed = true;
+          } else if (!on && has) {
+            viewRef.current.delete(id);
+            changed = true;
+          }
+        }
+        if (changed) {
+          setViewRev((value) => value + 1);
+        }
+      },
+      {root: null, rootMargin: margin, threshold: 0.01},
+    );
+    ioRef.current = io;
+    nodesRef.current.forEach((node) => io.observe(node));
+    return () => {
+      io.disconnect();
+      ioRef.current = null;
+    };
+  }, [ready]);
 
   useEffect(() => {
     if (!ready) {
@@ -349,6 +566,12 @@ export function ArchiveDesktop({projects, openSlug}: ArchiveDesktopProps) {
     prevSlugRef.current = openSlug;
     if (skipIntroRef.current && openSlug) {
       skipIntroRef.current = false;
+      const first = items
+        .filter((entry) => entry.slug === openSlug && entry.clickable)
+        .sort((a, b) => (a.clipIndex ?? 99) - (b.clipIndex ?? 99))[0];
+      if (first) {
+        setOpenId(first.id);
+      }
       return;
     }
     if (!openSlug && prev) {
@@ -357,10 +580,15 @@ export function ArchiveDesktop({projects, openSlug}: ArchiveDesktopProps) {
       setSinkingId(null);
     }
     if (openSlug && openSlug !== prev) {
-      const item = items.find((entry) => entry.slug === openSlug && entry.clickable);
+      const item =
+        items.find((entry) => entry.id === stoodRef.current && entry.slug === openSlug) ??
+        items
+          .filter((entry) => entry.slug === openSlug && entry.clickable)
+          .sort((a, b) => (a.clipIndex ?? 99) - (b.clipIndex ?? 99))[0];
       if (!item) {
         return;
       }
+      setOpenId(item.id);
       setZTop((value) => {
         setZMap((current) => ({...current, [item.id]: value + 1}));
         return value + 1;
@@ -376,7 +604,9 @@ export function ArchiveDesktop({projects, openSlug}: ArchiveDesktopProps) {
       return;
     }
     if (!openSlug && prev && motionRef.current?.dir !== "out") {
-      const item = items.find((entry) => entry.slug === prev);
+      const item =
+        items.find((entry) => entry.id === openId) ??
+        items.find((entry) => entry.slug === prev);
       if (!item) {
         return;
       }
@@ -389,7 +619,7 @@ export function ArchiveDesktop({projects, openSlug}: ArchiveDesktopProps) {
         glitch: true,
       });
     }
-  }, [openSlug, items, ready]);
+  }, [openSlug, openId, items, ready]);
 
   useEffect(() => {
     if (!motion) {
@@ -412,15 +642,13 @@ export function ArchiveDesktop({projects, openSlug}: ArchiveDesktopProps) {
       }, STEP_MS[index]);
     });
     const done = window.setTimeout(() => {
-      setMotion((prev) => {
-        if (!prev) {
-          return prev;
-        }
-        if (prev.dir === "out") {
-          return null;
-        }
-        return {...prev, glitch: false, step: 3};
-      });
+      const current = motionRef.current;
+      if (current?.dir === "out") {
+        setOpenId(null);
+        setMotion(null);
+        return;
+      }
+      setMotion((prev) => (prev ? {...prev, glitch: false, step: 3} : prev));
     }, 180);
     const glitchOff = window.setTimeout(() => {
       setMotion((prev) => (prev ? {...prev, glitch: false} : prev));
@@ -437,7 +665,6 @@ export function ArchiveDesktop({projects, openSlug}: ArchiveDesktopProps) {
   }, [motion?.slug, motion?.dir]);
 
   useEffect(() => {
-    let last = 0;
     let raf = 0;
     pointerRef.current = {
       x: window.innerWidth * 0.5,
@@ -458,8 +685,6 @@ export function ArchiveDesktop({projects, openSlug}: ArchiveDesktopProps) {
     };
     const tick = (now: number) => {
       raf = window.requestAnimationFrame(tick);
-      const dt = last ? Math.min(40, now - last) : 16;
-      last = now;
       const pointer = pointerRef.current;
       if (now - pointer.t > 48) {
         pointer.speed *= 0.82;
@@ -478,7 +703,7 @@ export function ArchiveDesktop({projects, openSlug}: ArchiveDesktopProps) {
         const locked = hid ? (lockMapRef.current[hid] ?? 0) >= 3 : false;
         if (item && locked) {
           if (hoverRef.current?.id !== hid) {
-            hoverRef.current = {id: hid, t: now};
+            hoverRef.current = {id: item.id, t: now};
           }
         } else if (hoverRef.current) {
           hoverRef.current = null;
@@ -493,13 +718,19 @@ export function ArchiveDesktop({projects, openSlug}: ArchiveDesktopProps) {
         hoverRef.current?.id ?? null,
         stoodRef.current,
         tuneRef.current,
+        returningRef.current,
+        returningRef.current
+          ? (now - returnStartRef.current) / ARCHIVE.autoLayMoveMs
+          : 0,
       );
       const hover = hoverRef.current;
       if (
         live &&
         !stoodRef.current &&
+        !returnLockRef.current &&
         hover &&
         hover.id !== stoodRef.current &&
+        hover.id !== clickStandRef.current &&
         !standLockRef.current &&
         now - hover.t >= ARCHIVE.standDwellMs
       ) {
@@ -519,14 +750,8 @@ export function ArchiveDesktop({projects, openSlug}: ArchiveDesktopProps) {
         const n = u >= 1 ? 0 : slideBlurAt(u);
         node.setAttribute("stdDeviation", `0 ${n.toFixed(2)}`);
       }
-      driveVideos(videosRef.current, pointer, dt, {
-        enabled: live || Boolean(openRef.current),
-        stoodId: openRef.current
-          ? itemsRef.current.find((item) => item.slug === openRef.current)?.id ?? null
-          : stoodRef.current,
-        focusId: stoodRef.current ?? hoverRef.current?.id ?? null,
-        lossOf: () => 0,
-        dead: () => false,
+      driveVideos(videosRef.current, now, {
+        previewId: openRef.current ? null : stoodRef.current,
       });
     };
     window.addEventListener("pointermove", onMove);
@@ -580,9 +805,83 @@ export function ArchiveDesktop({projects, openSlug}: ArchiveDesktopProps) {
     }, ARCHIVE.layMs);
   };
 
+  const flipReturn = (id: string) => {
+    const item = itemsRef.current.find((entry) => entry.id === id);
+    const node = nodesRef.current.get(id);
+    const plane = deskRef.current?.querySelector<HTMLElement>(".arc-plane");
+    const bind = videosRef.current.get(id);
+    if (bind) {
+      holdArchiveVideo(bind.el);
+    }
+    if (!item || !node || !plane) {
+      setStoodId(null);
+      returnLockRef.current = false;
+      return;
+    }
+    const first = node.getBoundingClientRect();
+    const last = measureDeskSlot(item, plane);
+    returnLockRef.current = true;
+    clickStandRef.current = id;
+    returnStartRef.current = performance.now();
+    setFlip({id, last, invert: flipInvert(first, last)});
+    setFlipPlay(false);
+    setReturningId(id);
+    setStoodId(null);
+    setFlashId(null);
+  };
+
+  const beginAutoReturn = (id: string) => {
+    if (returnLockRef.current || !stoodRef.current) {
+      return;
+    }
+    returnLockRef.current = true;
+    clearPanelTimers();
+    clearAutoLayTimers();
+    if (panelOpenRef.current) {
+      setPanelOpen(false);
+      autoLayWaitRef.current = window.setTimeout(() => {
+        autoLayWaitRef.current = 0;
+        flipReturn(id);
+      }, ARCHIVE.infoCloseMs);
+      return;
+    }
+    flipReturn(id);
+  };
+  beginAutoReturnRef.current = beginAutoReturn;
+
+  useLayoutEffect(() => {
+    if (!flip || flipPlay) {
+      return;
+    }
+    const frame = window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => setFlipPlay(true));
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [flip, flipPlay]);
+
+  useEffect(() => {
+    if (!flip || !flipPlay) {
+      return;
+    }
+    const id = flip.id;
+    const done = window.setTimeout(() => {
+      const bind = videosRef.current.get(id);
+      if (bind) {
+        releaseArchiveVideo(bind.el);
+      }
+      setReturningId(null);
+      setFlip(null);
+      setFlipPlay(false);
+      returnLockRef.current = false;
+    }, ARCHIVE.autoLayMoveMs);
+    return () => window.clearTimeout(done);
+  }, [flip, flipPlay]);
+
   const close = () => {
     const slug = motion?.slug ?? openSlug;
-    const item = items.find((entry) => entry.slug === slug);
+    const item =
+      items.find((entry) => entry.id === openId) ??
+      items.find((entry) => entry.slug === slug);
     if (item && slug) {
       const from =
         motion && motion.dir === "in"
@@ -637,11 +936,12 @@ export function ArchiveDesktop({projects, openSlug}: ArchiveDesktopProps) {
       setZTop(next);
       return {...prev, [item.id]: next};
     });
+    setOpenId(item.id);
     router.push(`/work/${encodeURIComponent(item.slug)}`);
   };
 
   const bindVideo = (id: string, el: HTMLVideoElement | null, rect: Rect) => {
-    if (!el) {
+    if (!el || !el.getAttribute("src")) {
       videosRef.current.delete(id);
       return;
     }
@@ -650,7 +950,8 @@ export function ArchiveDesktop({projects, openSlug}: ArchiveDesktopProps) {
       x: rect.x + rect.w * 0.5,
       y: rect.y + rect.h * 0.5,
     });
-    cueArchiveVideo(id, el);
+    const item = items.find((entry) => entry.id === id);
+    cueArchiveVideo(id, el, item?.cueAt ?? ARCHIVE.videoCueAt);
   };
 
   if (!ready) {
@@ -671,12 +972,17 @@ export function ArchiveDesktop({projects, openSlug}: ArchiveDesktopProps) {
       style={{
         perspective: `${ARCHIVE.tiltPerspective}px`,
         perspectiveOrigin: "50% 30%",
-        ["--arc-slide-ease" as string]: SLIDE_EASE,
-        ["--arc-slide-fade" as string]: ARCHIVE.slideFadeUntil,
+        ["--arc-slide-ease" as string]: ARCHIVE.slideEase,
         ["--arc-settle-px" as string]: `${ARCHIVE.slideSettleShakePx}px`,
         ["--arc-settle-ms" as string]: `${ARCHIVE.slideSettleShakeMs}ms`,
       }}
     >
+      <div
+        className="arc-plane"
+        style={{
+          transform: `translateY(${ARCHIVE.planeShiftY}px) rotateX(${ARCHIVE.planeTilt}deg)`,
+        }}
+      >
       <svg className="arc-slide-defs" aria-hidden>
         <defs>
           {items.map((item) => (
@@ -699,12 +1005,15 @@ export function ArchiveDesktop({projects, openSlug}: ArchiveDesktopProps) {
         if (!look.show) {
           return null;
         }
-        const isOpen = item.slug === openSlug || motion?.slug === item.slug;
+        const isOpen = item.id === openId && Boolean(openSlug || motion);
         const detail = Boolean(isOpen && (openSlug || motion));
         const stood = stoodId === item.id && !detail;
+        const returning = returningId === item.id && !detail;
         const dimmed = Boolean(openSlug || motion) && !detail;
         let rect = itemRect(item);
-        if (motion && motion.slug === item.slug) {
+        if (returning && flip && flip.id === item.id) {
+          rect = flip.last;
+        } else if (motion && isOpen) {
           const t = STEPS[motion.step];
           rect = mixRect(motion.from, motion.to, t);
         } else if (isOpen && openSlug && (!motion || motion.dir === "in")) {
@@ -712,8 +1021,8 @@ export function ArchiveDesktop({projects, openSlug}: ArchiveDesktopProps) {
         }
         const live = item.clickable && step >= 3 && !dimmed;
         const rising = stood && standReady;
-        const sinking = sinkingId === item.id && !stood;
-        const sliding = step === 1 && !detail && !stood;
+        const sinking = sinkingId === item.id && !stood && !returning;
+        const sliding = step === 1 && !detail && !stood && !returning;
         const slide = slideByIdRef.current[item.id];
         const article = (
           <article
@@ -721,7 +1030,12 @@ export function ArchiveDesktop({projects, openSlug}: ArchiveDesktopProps) {
             ref={(el) => {
               if (el) {
                 nodesRef.current.set(item.id, el);
+                ioRef.current?.observe(el);
               } else {
+                const prev = nodesRef.current.get(item.id);
+                if (prev) {
+                  ioRef.current?.unobserve(prev);
+                }
                 nodesRef.current.delete(item.id);
               }
             }}
@@ -733,6 +1047,8 @@ export function ArchiveDesktop({projects, openSlug}: ArchiveDesktopProps) {
               sliding ? "arc-win--slide" : "",
               rising ? "arc-win--rise" : "",
               sinking ? "arc-win--sink" : "",
+              returning && flipPlay ? "arc-win--return" : "",
+              detail ? "arc-win--detail" : "",
               flashId === item.id ? "arc-win--flash" : "",
             ].join(" ")}
             style={{
@@ -740,9 +1056,11 @@ export function ArchiveDesktop({projects, openSlug}: ArchiveDesktopProps) {
               top: rect.y,
               width: rect.w,
               height: rect.h,
-              zIndex: stood ? 4 : undefined,
+              zIndex: stood || returning ? 4 : undefined,
               ["--arc-slide-ms" as string]: `${slide?.slideMs ?? ARCHIVE.slideMsMin}ms`,
               ["--arc-slide-from" as string]: `${slide?.fromVh ?? ARCHIVE.slideFromVhMin}vh`,
+              ["--arc-return-ms" as string]: `${ARCHIVE.autoLayMoveMs}ms`,
+              ["--arc-return-ease" as string]: ARCHIVE.autoLayEase,
               filter: [
                 sliding ? `url(#${blurFilterId(item.id)})` : null,
                 !item.clickable && look.gray > 0 ? `grayscale(${look.gray})` : null,
@@ -751,13 +1069,19 @@ export function ArchiveDesktop({projects, openSlug}: ArchiveDesktopProps) {
               ]
                 .filter(Boolean)
                 .join(" ") || undefined,
-              transform: poseTransform(
-                item,
-                look.scale,
-                stood && standReady,
-                detail,
-              ),
-              transformOrigin: stood || detail ? "center center" : "center bottom",
+              transform:
+                returning && flip && flip.id === item.id
+                  ? flipPlay
+                    ? "none"
+                    : flip.invert
+                  : poseTransform(
+                      item,
+                      look.scale,
+                      stood && standReady,
+                      detail,
+                    ),
+              transformOrigin:
+                returning ? "top left" : stood || detail ? "center center" : "center bottom",
               pointerEvents: dimmed || !item.clickable ? "none" : "auto",
             }}
             onPointerEnter={() => {
@@ -765,10 +1089,16 @@ export function ArchiveDesktop({projects, openSlug}: ArchiveDesktopProps) {
                 return;
               }
               hoverRef.current = {id: item.id, t: performance.now()};
+              if (stood && !returning) {
+                enterPanelZone("win");
+              }
             }}
             onPointerLeave={() => {
               if (hoverRef.current?.id === item.id) {
                 hoverRef.current = null;
+              }
+              if (stood && !returning) {
+                leavePanelZone("win");
               }
             }}
           >
@@ -778,15 +1108,20 @@ export function ArchiveDesktop({projects, openSlug}: ArchiveDesktopProps) {
                 className="arc-win__title"
                 tabIndex={live ? 0 : -1}
                 onClick={() => {
-                  if (isOpen && openSlug) {
+                  if (isOpen && openSlug || returning) {
                     return;
                   }
                   if (stood) {
                     open(item);
+                    return;
+                  }
+                  if (clickStandRef.current === item.id) {
+                    clickStandRef.current = null;
+                    standWindow(item.id);
                   }
                 }}
               >
-                {label(item.title)}
+                {label(item)}
               </button>
               <button
                 type="button"
@@ -809,19 +1144,29 @@ export function ArchiveDesktop({projects, openSlug}: ArchiveDesktopProps) {
             <div
               className="arc-win__body"
               onClick={() => {
-                if (isOpen && openSlug) {
+                if (isOpen && openSlug || returning) {
                   return;
                 }
                 if (stood) {
                   open(item);
+                  return;
+                }
+                if (clickStandRef.current === item.id) {
+                  clickStandRef.current = null;
+                  standWindow(item.id);
                 }
               }}
             >
               <div className="arc-win__media">
                 {detail && openSlug && item.slug === openSlug && item.clickable ? (
-                  <Detail item={item} bindVideo={bindVideo} rect={rect} />
+                  <Detail item={item} />
                 ) : (
-                  <WinBody item={item} bindVideo={bindVideo} rect={rect} />
+                  <WinBody
+                    item={item}
+                    bindVideo={bindVideo}
+                    rect={rect}
+                    load={stood || returning || detail || viewRev >= 0 && viewRef.current.has(item.id)}
+                  />
                 )}
               </div>
               <div className="arc-win__noise" style={{opacity: look.noise}} />
@@ -845,15 +1190,28 @@ export function ArchiveDesktop({projects, openSlug}: ArchiveDesktopProps) {
             item.id,
           );
         }
-        if (stood) {
+        if (stood || returning) {
           return createPortal(
-            <div className="arc-portal arc-portal--stand">{article}</div>,
+            <div className="arc-portal arc-portal--stand">
+              {stood ? (
+                <InfoPanel
+                  item={item}
+                  box={stoodBox(itemRect(item))}
+                  open={panelOpen && stoodId === item.id}
+                  barTitle={label(item)}
+                  onEnter={() => enterPanelZone("panel")}
+                  onLeave={() => leavePanelZone("panel")}
+                />
+              ) : null}
+              {article}
+            </div>,
             document.body,
             item.id,
           );
         }
         return article;
       })}
+      </div>
       {stoodId || openSlug
         ? createPortal(
             <div className="arc-crt-top" aria-hidden>
@@ -870,26 +1228,22 @@ function WinBody({
   item,
   bindVideo,
   rect,
+  load,
 }: {
   item: ArchiveItem;
   bindVideo: (id: string, el: HTMLVideoElement | null, rect: Rect) => void;
   rect: Rect;
+  load: boolean;
 }) {
-  if (item.kind === "bar") {
-    return <div className="arc-win__empty">NO DATA</div>;
-  }
-  if (item.kind === "noise") {
-    return <div className="arc-win__empty"> </div>;
-  }
   if (item.video) {
     return (
       <video
         ref={(el) => bindVideo(item.id, el, rect)}
-        src={item.video}
+        src={load ? item.video : undefined}
         poster={item.image ?? undefined}
         muted
         playsInline
-        preload="auto"
+        preload="metadata"
       />
     );
   }
@@ -905,38 +1259,193 @@ function WinBody({
   return <div className="arc-win__empty">NO SIGNAL</div>;
 }
 
-function Detail({
-  item,
-  bindVideo,
-  rect,
+function DetailVideo({
+  src,
+  poster,
+  lead,
 }: {
-  item: ArchiveItem;
-  bindVideo: (id: string, el: HTMLVideoElement | null, rect: Rect) => void;
-  rect: Rect;
+  src: string;
+  poster?: string;
+  lead: boolean;
 }) {
+  const ref = useRef<HTMLVideoElement>(null);
+  const [muted, setMuted] = useState(false);
+  const [paused, setPaused] = useState(false);
+  const [progress, setProgress] = useState(0);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) {
+      return;
+    }
+    el.currentTime = 0;
+    el.loop = true;
+    if (!lead) {
+      el.muted = true;
+      setMuted(true);
+      el.pause();
+      return () => {
+        el.pause();
+        el.currentTime = 0;
+      };
+    }
+    el.muted = false;
+    setMuted(false);
+    const start = () => {
+      const play = el.play();
+      if (play) {
+        play.catch(() => {
+          el.muted = true;
+          setMuted(true);
+          el.play().catch(() => {});
+        });
+      }
+    };
+    if (el.readyState >= 2) {
+      start();
+    } else {
+      el.addEventListener("canplay", start, {once: true});
+    }
+    const onTime = () => {
+      const duration = el.duration;
+      setProgress(duration ? el.currentTime / duration : 0);
+    };
+    const onEnded = () => {
+      el.currentTime = 0;
+      el.play().catch(() => {});
+      setPaused(false);
+    };
+    el.addEventListener("timeupdate", onTime);
+    el.addEventListener("ended", onEnded);
+    return () => {
+      el.removeEventListener("canplay", start);
+      el.removeEventListener("timeupdate", onTime);
+      el.removeEventListener("ended", onEnded);
+      el.pause();
+      el.currentTime = 0;
+    };
+  }, [src, lead]);
+
+  const togglePlay = () => {
+    const el = ref.current;
+    if (!el) {
+      return;
+    }
+    if (el.paused) {
+      el.play().catch(() => {});
+      setPaused(false);
+    } else {
+      el.pause();
+      setPaused(true);
+    }
+  };
+  const togglePlayRef = useRef(togglePlay);
+  togglePlayRef.current = togglePlay;
+
+  useEffect(() => {
+    if (!lead) {
+      return;
+    }
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== " " && event.code !== "Space") {
+        return;
+      }
+      event.preventDefault();
+      togglePlayRef.current();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [lead]);
+
+  const toggleMute = (event: {stopPropagation: () => void}) => {
+    event.stopPropagation();
+    const el = ref.current;
+    if (!el) {
+      return;
+    }
+    el.muted = !el.muted;
+    setMuted(el.muted);
+  };
+
+  const seek = (event: PointerEvent<HTMLDivElement>) => {
+    event.stopPropagation();
+    const el = ref.current;
+    if (!el || !el.duration) {
+      return;
+    }
+    const box = event.currentTarget.getBoundingClientRect();
+    el.currentTime = ((event.clientX - box.left) / Math.max(box.width, 1)) * el.duration;
+  };
+
+  return (
+    <div className="arc-detail__player">
+      <video
+        ref={ref}
+        src={src}
+        poster={poster}
+        playsInline
+        preload="auto"
+        loop
+        onClick={togglePlay}
+      />
+      <button
+        type="button"
+        className="arc-detail__snd"
+        onClick={toggleMute}
+        aria-label={muted ? "Sound on" : "Sound off"}
+      >
+        {muted ? "SND OFF" : "SND ON"}
+      </button>
+      <div
+        className="arc-detail__bar"
+        onPointerDown={seek}
+        role="progressbar"
+        aria-valuenow={Math.round(progress * 100)}
+      >
+        <i style={{width: `${Math.min(100, Math.max(0, progress * 100))}%`}} />
+      </div>
+    </div>
+  );
+}
+
+function Detail({item}: {item: ArchiveItem}) {
+  const clips = item.videos.length ? item.videos : item.video ? [item.video] : [];
+  const lead = clips[0];
+  const rest = clips.slice(1);
+  const extras = lead ? item.images : item.images.slice(1);
   return (
     <div className="arc-detail">
-      <aside className="arc-detail__meta">
-        <h2>{item.title}</h2>
-        <p>{[item.year, item.category].filter(Boolean).join(" · ")}</p>
-        {item.shortDescription ? <p>{item.shortDescription}</p> : null}
-      </aside>
-      <div className="arc-detail__media">
-        {item.videos.map((url, index) => (
-          <video
-            key={url}
-            ref={(el) => bindVideo(`${item.id}-d-${index}`, el, rect)}
-            src={url}
+      <div className="arc-detail__hero">
+        {lead ? (
+          <DetailVideo
+            src={lead}
             poster={item.image ?? item.images[0]}
-            muted
-            playsInline
-            preload="auto"
+            lead
           />
-        ))}
-        {item.images.map((url) => (
-          <img key={url} src={url} alt="" />
-        ))}
+        ) : item.images[0] ? (
+          <img className="arc-detail__hero-img" src={item.images[0]} alt="" />
+        ) : null}
+        <aside className="arc-detail__meta">
+          <h2>{item.projectTitle ?? item.title}</h2>
+          <p>{[item.year, item.category].filter(Boolean).join(" · ")}</p>
+          {item.shortDescription ? <p>{item.shortDescription}</p> : null}
+        </aside>
       </div>
+      {rest.length || extras.length ? (
+        <div className="arc-detail__more">
+          {rest.map((url) => (
+            <DetailVideo
+              key={url}
+              src={url}
+              poster={item.image ?? item.images[0]}
+              lead={false}
+            />
+          ))}
+          {extras.map((url) => (
+            <img key={url} src={url} alt="" />
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }

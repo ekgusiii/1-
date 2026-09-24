@@ -7,54 +7,150 @@ export type VideoBind = {
 };
 
 export type VideoDrive = {
-  enabled: boolean;
-  stoodId: string | null;
-  focusId: string | null;
-  lossOf: (id: string) => number;
-  dead: (id: string) => boolean;
+  previewId: string | null;
 };
 
-const lastTime = new Map<string, number>();
+type Trailer = {
+  el: HTMLVideoElement;
+  story: number;
+  until: number;
+  busy: boolean;
+};
 
-export function cueArchiveVideo(id: string, el: HTMLVideoElement) {
-  if (el.dataset.cueBound === "1") {
+const trailers = new Map<string, Trailer>();
+
+function rand(min: number, max: number) {
+  return min + Math.random() * (max - min);
+}
+
+function flashCut(el: HTMLVideoElement) {
+  el.dataset.cut = "1";
+  window.setTimeout(() => {
+    el.dataset.cut = "0";
+  }, ARCHIVE.trailerCutMs);
+}
+
+function paintFrame(el: HTMLVideoElement) {
+  const play = el.play();
+  if (play) {
+    play
+      .then(() => {
+        el.pause();
+      })
+      .catch(() => {});
+  } else {
+    el.pause();
+  }
+}
+
+function cutTrailer(state: Trailer, now: number) {
+  if (state.busy) {
     return;
   }
-  el.dataset.cueBound = "1";
-  const paint = () => {
-    const play = el.play();
-    if (play) {
-      play
-        .then(() => {
-          el.pause();
-        })
-        .catch(() => {});
+  const el = state.el;
+  const duration = el.duration;
+  if (!duration || !Number.isFinite(duration) || duration <= 0) {
+    state.until = now + 200;
+    return;
+  }
+  state.busy = true;
+  const jitter = (Math.random() - 0.5) * 2 * ARCHIVE.trailerStoryJitter;
+  const at = Math.min(
+    duration * 0.96,
+    Math.max(0.04, (state.story + jitter) * duration),
+  );
+  const moving = Math.random() < ARCHIVE.trailerMoveChance;
+  state.until =
+    now +
+    (moving
+      ? rand(ARCHIVE.trailerMoveMsMin, ARCHIVE.trailerMoveMsMax)
+      : rand(ARCHIVE.trailerStillMsMin, ARCHIVE.trailerStillMsMax));
+  state.story += rand(ARCHIVE.trailerStoryStepMin, ARCHIVE.trailerStoryStepMax);
+  if (state.story > 0.92) {
+    state.story = ARCHIVE.trailerStoryStart + Math.random() * 0.05;
+  }
+  el.muted = true;
+  const apply = () => {
+    el.removeEventListener("seeked", apply);
+    state.busy = false;
+    flashCut(el);
+    if (moving) {
+      el.play().catch(() => {});
+    } else {
+      paintFrame(el);
     }
   };
+  if (Math.abs(el.currentTime - at) < 0.02) {
+    apply();
+    return;
+  }
+  el.addEventListener("seeked", apply);
+  el.currentTime = at;
+}
+
+function startTrailer(id: string, el: HTMLVideoElement, now: number) {
+  const prev = trailers.get(id);
+  if (prev?.el === el) {
+    return;
+  }
+  stopTrailer(id, prev?.el);
+  const state: Trailer = {
+    el,
+    story: ARCHIVE.trailerStoryStart + Math.random() * 0.04,
+    until: 0,
+    busy: false,
+  };
+  trailers.set(id, state);
+  el.muted = true;
+  cutTrailer(state, now);
+}
+
+function stopTrailer(id: string, el?: HTMLVideoElement) {
+  trailers.delete(id);
+  if (!el) {
+    return;
+  }
+  el.pause();
+  el.dataset.cut = "0";
+  el.dataset.shake = "0";
+  const duration = el.duration;
+  if (duration && Number.isFinite(duration) && duration > 0) {
+    el.currentTime = duration * ARCHIVE.videoCueAt;
+  }
+}
+
+export function cueArchiveVideo(
+  id: string,
+  el: HTMLVideoElement,
+  cueAt = ARCHIVE.videoCueAt,
+) {
+  if (!el.src) {
+    return;
+  }
+  const token = `${el.currentSrc || el.src}|${cueAt.toFixed(3)}`;
+  if (el.dataset.cueBound === token) {
+    return;
+  }
+  el.dataset.cueBound = token;
+  el.dataset.cued = "0";
   const cue = () => {
     const duration = el.duration;
     if (!duration || !Number.isFinite(duration) || duration <= 0) {
       return;
     }
-    const saved = lastTime.get(id);
-    const at =
-      saved && saved > 0.05 ? saved : duration * ARCHIVE.videoCueAt;
+    const at = duration * cueAt;
     const apply = () => {
       el.removeEventListener("seeked", apply);
-      lastTime.set(id, el.currentTime);
-      paint();
+      paintFrame(el);
     };
     if (el.dataset.cued === "1" && Math.abs(el.currentTime - at) < 0.08) {
-      paint();
+      paintFrame(el);
       return;
     }
     el.dataset.cued = "1";
     el.addEventListener("seeked", apply);
     el.currentTime = at;
   };
-  el.addEventListener("timeupdate", () => {
-    lastTime.set(id, el.currentTime);
-  });
   if (el.readyState >= 1) {
     cue();
   }
@@ -66,57 +162,49 @@ function rootId(id: string) {
   return id.replace(/-d-\d+$/, "");
 }
 
+export function holdArchiveVideo(el: HTMLVideoElement) {
+  el.pause();
+  el.dataset.hold = "1";
+}
+
+export function releaseArchiveVideo(el: HTMLVideoElement) {
+  delete el.dataset.hold;
+}
+
 export function driveVideos(
   registry: Map<string, VideoBind>,
-  cursor: {x: number; y: number; speed: number},
-  dt: number,
+  now: number,
   drive?: VideoDrive,
 ) {
-  const near = (window.visualViewport?.height ?? window.innerHeight) * ARCHIVE.videoNear;
-  const ranked = [...registry.entries()]
-    .map(([id, bind]) => ({
-      id,
-      bind,
-      dist: Math.hypot(cursor.x - bind.x, cursor.y - bind.y),
-    }))
-    .sort((a, b) => a.dist - b.dist);
-
-  ranked.forEach((entry, index) => {
-    const video = entry.bind.el;
-    const id = rootId(entry.id);
-    if (drive?.dead(id) || drive?.dead(entry.id)) {
-      video.dataset.shake = "0";
-      return;
+  const previewId = drive?.previewId ?? null;
+  for (const [id, bind] of registry) {
+    if (id.includes("-d-")) {
+      continue;
     }
-    const stood = Boolean(
-      drive?.stoodId && (id === drive.stoodId || entry.id.startsWith(drive.stoodId)),
-    );
-    if (drive?.enabled && !stood) {
-      video.dataset.shake = "0";
-      return;
+    const key = rootId(id);
+    const el = bind.el;
+    if (el.dataset.hold === "1") {
+      el.pause();
+      continue;
     }
-    let weight = Math.max(0, 1 - entry.dist / Math.max(near, 1));
-    if (drive?.enabled) {
-      weight = stood ? 1 : 0;
-    }
-    const active = index < ARCHIVE.videoMaxActive && weight > 0.03;
-    if (active && cursor.speed > 0.015) {
-      const duration = video.duration;
-      if (duration && Number.isFinite(duration) && duration > 0) {
-        const boost = drive?.enabled && drive.focusId === id ? 1 : weight;
-        let next = video.currentTime + cursor.speed * dt * ARCHIVE.videoK * boost;
-        next %= duration;
-        if (next < 0) {
-          next += duration;
-        }
-        if (Math.abs(next - video.currentTime) > 0.001) {
-          video.currentTime = next;
-        }
+    const preview = Boolean(previewId && key === previewId);
+    if (preview) {
+      startTrailer(key, el, now);
+      const state = trailers.get(key);
+      if (state && now >= state.until) {
+        cutTrailer(state, now);
       }
-      video.dataset.shake = cursor.speed > 0.35 ? "1" : "0";
-    } else {
-      video.dataset.shake = "0";
+      continue;
     }
-    video.dataset.still = cursor.speed < 0.02 ? "1" : "0";
-  });
+    if (trailers.has(key)) {
+      stopTrailer(key, el);
+    }
+    el.dataset.shake = "0";
+    el.dataset.cut = "0";
+  }
+  for (const id of [...trailers.keys()]) {
+    if (id !== previewId) {
+      stopTrailer(id, trailers.get(id)?.el);
+    }
+  }
 }
