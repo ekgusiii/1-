@@ -767,6 +767,13 @@
   transition: transform var(--arc-info-close-ms, 300ms) var(--arc-info-close-ease, cubic-bezier(0.4, 0, 1, 1));
 }
 
+.arc-info[data-side="right"] .arc-info__sheet {
+  border-right: 1px solid #fff;
+  border-left: 0;
+  transform: translateX(-100%);
+  transform-origin: left center;
+}
+
 .arc-info[data-open="1"] .arc-info__sheet {
   transform: translateX(0);
   transition: transform var(--arc-info-open-ms, 500ms) var(--arc-info-open-ease, cubic-bezier(0.22, 1, 0.36, 1));

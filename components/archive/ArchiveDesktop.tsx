@@ -28,7 +28,7 @@ import {
   releaseArchiveVideo,
   type VideoBind,
 } from "@/components/archive/archiveVideos";
-import {InfoPanel} from "@/components/archive/InfoPanel";
+import {decidePanelSide, InfoPanel, type InfoSide} from "@/components/archive/InfoPanel";
 import type {Project} from "@/sanity/lib/queries";
 
 type Rect = {x: number; y: number; w: number; h: number};
@@ -67,6 +67,22 @@ function fullRect(): Rect {
   };
 }
 
+type StandPlan = {
+  id: string;
+  scale: number;
+  dx: number;
+  dy: number;
+  side: InfoSide;
+  box: Rect;
+};
+
+function viewSize() {
+  return {
+    vw: window.innerWidth,
+    vh: window.visualViewport?.height ?? window.innerHeight,
+  };
+}
+
 function stoodBox(rect: Rect): Rect {
   const scale = ARCHIVE.standScale;
   return {
@@ -74,6 +90,46 @@ function stoodBox(rect: Rect): Rect {
     y: rect.y + rect.h * 0.5 - (rect.h * scale) * 0.5,
     w: rect.w * scale,
     h: rect.h * scale,
+  };
+}
+
+function planStandLayout(id: string, rect: Rect): StandPlan {
+  const {vw, vh} = viewSize();
+  const pad = ARCHIVE.standPad;
+  const availW = Math.max(1, vw - pad * 2);
+  const availH = Math.max(1, vh - pad * 2);
+  const maxWinW = Math.max(1, availW - ARCHIVE.infoWidth);
+  const scale = Math.min(ARCHIVE.standScale, maxWinW / rect.w, availH / rect.h);
+  const win: Rect = {
+    w: rect.w * scale,
+    h: rect.h * scale,
+    x: rect.x + rect.w * 0.5 - (rect.w * scale) * 0.5,
+    y: rect.y + rect.h * 0.5 - (rect.h * scale) * 0.5,
+  };
+  const side = decidePanelSide(win.x);
+  const unionX = side === "left" ? win.x - ARCHIVE.infoWidth : win.x;
+  const unionW = win.w + ARCHIVE.infoWidth;
+  let dx = 0;
+  let dy = 0;
+  if (unionX + dx < pad) {
+    dx += pad - (unionX + dx);
+  }
+  if (unionX + unionW + dx > vw - pad) {
+    dx += vw - pad - (unionX + unionW + dx);
+  }
+  if (win.y + dy < pad) {
+    dy += pad - (win.y + dy);
+  }
+  if (win.y + win.h + dy > vh - pad) {
+    dy += vh - pad - (win.y + win.h + dy);
+  }
+  return {
+    id,
+    scale,
+    dx,
+    dy,
+    side,
+    box: {x: win.x + dx, y: win.y + dy, w: win.w, h: win.h},
   };
 }
 
@@ -100,12 +156,21 @@ function label(item: ArchiveItem) {
   return title.endsWith(".MOV") ? title : `${title}.MOV`;
 }
 
-function poseTransform(item: ArchiveItem, scale: number, stood: boolean, detail: boolean) {
+function poseTransform(
+  item: ArchiveItem,
+  scale: number,
+  stood: boolean,
+  detail: boolean,
+  plan: StandPlan | null,
+) {
   if (detail) {
     return "none";
   }
   if (stood) {
-    return `rotateX(0deg) rotateZ(0deg) scale(${ARCHIVE.standScale})`;
+    const standScale = plan?.scale ?? ARCHIVE.standScale;
+    const dx = plan?.dx ?? 0;
+    const dy = plan?.dy ?? 0;
+    return `rotateX(0deg) rotateZ(0deg) translate(${dx}px, ${dy}px) scale(${standScale})`;
   }
   return `rotateX(${item.tiltX}deg) rotateZ(${item.tiltZ}deg) translateZ(var(--arc-tune-z, 0px)) scale(calc(${scale} * var(--arc-tune-scale, 1))) translateY(var(--arc-slide-y, 0px))`;
 }
@@ -314,6 +379,8 @@ export function ArchiveDesktop({projects, openSlug}: ArchiveDesktopProps) {
   const [flip, setFlip] = useState<{id: string; last: Rect; invert: string} | null>(null);
   const [flipPlay, setFlipPlay] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
+  const [panelSide, setPanelSide] = useState<InfoSide>("left");
+  const [standPlan, setStandPlan] = useState<StandPlan | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
   const [sinkingId, setSinkingId] = useState<string | null>(null);
   const [flashId, setFlashId] = useState<string | null>(null);
@@ -343,6 +410,7 @@ export function ArchiveDesktop({projects, openSlug}: ArchiveDesktopProps) {
   const stoodRef = useRef<string | null>(null);
   const hoverRef = useRef<{id: string; t: number} | null>(null);
   const panelOpenRef = useRef(false);
+  const panelLockRef = useRef(false);
   const panelTimerRef = useRef(0);
   const panelGraceRef = useRef(0);
   const panelOverRef = useRef({win: false, panel: false});
@@ -370,6 +438,7 @@ export function ArchiveDesktop({projects, openSlug}: ArchiveDesktopProps) {
   useEffect(() => {
     if (!stoodId) {
       setStandReady(false);
+      setStandPlan(null);
       return;
     }
     setStandReady(false);
@@ -410,12 +479,30 @@ export function ArchiveDesktop({projects, openSlug}: ArchiveDesktopProps) {
     if (!returnLockRef.current) {
       clearAutoLayTimers();
     }
-    if (returnLockRef.current || panelOpenRef.current || panelTimerRef.current) {
+    if (
+      returnLockRef.current ||
+      panelOpenRef.current ||
+      panelLockRef.current ||
+      panelTimerRef.current
+    ) {
       return;
     }
     panelTimerRef.current = window.setTimeout(() => {
       panelTimerRef.current = 0;
-      setPanelOpen(true);
+      const id = stoodRef.current;
+      if (!id || returnLockRef.current) {
+        return;
+      }
+      panelLockRef.current = true;
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => {
+          if (stoodRef.current !== id || returnLockRef.current) {
+            panelLockRef.current = false;
+            return;
+          }
+          setPanelOpen(true);
+        });
+      });
     }, ARCHIVE.infoDwellMs);
   };
 
@@ -454,13 +541,36 @@ export function ArchiveDesktop({projects, openSlug}: ArchiveDesktopProps) {
         clearAutoLayTimers();
       }
       panelOverRef.current = {win: false, panel: false};
+      panelLockRef.current = false;
       setPanelOpen(false);
+      setPanelSide("left");
       return;
     }
     if (hoverRef.current?.id === stoodId) {
       enterPanelZone("win");
     }
   }, [stoodId, openSlug]);
+
+  useEffect(() => {
+    if (!stoodId) {
+      return;
+    }
+    const relayout = () => {
+      const item = itemsRef.current.find((entry) => entry.id === stoodId);
+      if (!item) {
+        return;
+      }
+      const plan = planStandLayout(stoodId, itemRect(item));
+      setStandPlan(plan);
+      setPanelSide(plan.side);
+    };
+    window.addEventListener("resize", relayout);
+    window.visualViewport?.addEventListener("resize", relayout);
+    return () => {
+      window.removeEventListener("resize", relayout);
+      window.visualViewport?.removeEventListener("resize", relayout);
+    };
+  }, [stoodId]);
 
   useEffect(() => {
     setReady(true);
@@ -765,6 +875,12 @@ export function ArchiveDesktop({projects, openSlug}: ArchiveDesktopProps) {
   }, []);
 
   const standWindow = (id: string) => {
+    const item = itemsRef.current.find((entry) => entry.id === id);
+    if (item) {
+      const plan = planStandLayout(id, itemRect(item));
+      setStandPlan(plan);
+      setPanelSide(plan.side);
+    }
     setStoodId((prev) => {
       if (prev && prev !== id) {
         setSinkingId(prev);
@@ -1024,6 +1140,11 @@ export function ArchiveDesktop({projects, openSlug}: ArchiveDesktopProps) {
         const sinking = sinkingId === item.id && !stood && !returning;
         const sliding = step === 1 && !detail && !stood && !returning;
         const slide = slideByIdRef.current[item.id];
+        const mediaLoad =
+          stood ||
+          returning ||
+          detail ||
+          (viewRev >= 0 && viewRef.current.has(item.id));
         const article = (
           <article
             key={item.id}
@@ -1079,6 +1200,9 @@ export function ArchiveDesktop({projects, openSlug}: ArchiveDesktopProps) {
                       look.scale,
                       stood && standReady,
                       detail,
+                      stood && standReady && standPlan?.id === item.id
+                        ? standPlan
+                        : null,
                     ),
               transformOrigin:
                 returning ? "top left" : stood || detail ? "center center" : "center bottom",
@@ -1165,7 +1289,7 @@ export function ArchiveDesktop({projects, openSlug}: ArchiveDesktopProps) {
                     item={item}
                     bindVideo={bindVideo}
                     rect={rect}
-                    load={stood || returning || detail || viewRev >= 0 && viewRef.current.has(item.id)}
+                    load={mediaLoad}
                   />
                 )}
               </div>
@@ -1196,8 +1320,14 @@ export function ArchiveDesktop({projects, openSlug}: ArchiveDesktopProps) {
               {stood ? (
                 <InfoPanel
                   item={item}
-                  box={stoodBox(itemRect(item))}
+                  box={
+                    standPlan?.id === item.id
+                      ? standPlan.box
+                      : stoodBox(itemRect(item))
+                  }
                   open={panelOpen && stoodId === item.id}
+                  side={panelSide}
+                  shift={0}
                   barTitle={label(item)}
                   onEnter={() => enterPanelZone("panel")}
                   onLeave={() => leavePanelZone("panel")}

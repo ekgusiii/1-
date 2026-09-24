@@ -1,0 +1,143 @@
+.crt-main-exit {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100dvh;
+}
+
+.crt-transit {
+  --recall-face-raster: var(--font-recall-cond), "Arial Narrow", sans-serif;
+  --recall-face-display: var(--font-recall-cond), "Arial Narrow", sans-serif;
+  --recall-face-meta: var(--font-recall-cond), "Arial Narrow", sans-serif;
+  position: fixed;
+  inset: 0;
+  z-index: 10010;
+  pointer-events: auto;
+  background: #000;
+}
+
+.crt-transit__svg {
+  position: absolute;
+  width: 0;
+  height: 0;
+}
+
+.crt-transit__tube {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: calc(min(100vw, 100dvh) * var(--recall-radius, 0.015));
+  background: #000;
+}
+
+.crt-transit__still,
+.crt-transit__field,
+.crt-transit__glass {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.crt-transit__still {
+  z-index: 0;
+  opacity: 0;
+}
+
+.crt-transit__field {
+  z-index: 1;
+  opacity: 0;
+}
+
+.crt-transit__frags {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.crt-transit__glass {
+  z-index: 3;
+  opacity: 0;
+}
+
+.crt-transit__mark {
+  position: absolute;
+  left: -0.16em;
+  top: 0.02em;
+  right: -0.14em;
+  bottom: -0.02em;
+  z-index: 0;
+  border-radius: 0;
+  background: var(--recall-mark-fill, #070b24);
+  box-shadow: var(--recall-mark-inset, inset 0 0 14px rgba(170, 200, 255, 0.18));
+  filter: blur(var(--recall-mark-blur, 0.5px));
+}
+
+.crt-transit__row {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: flex-end;
+  overflow: visible;
+}
+
+.crt-transit__frag {
+  position: absolute;
+  display: flex;
+  align-items: flex-end;
+  margin: 0;
+  padding: 0;
+  white-space: nowrap;
+  line-height: 1;
+  pointer-events: none;
+}
+
+.crt-transit__frag[data-anchor="right"] {
+  transform: translate(-100%, 0);
+}
+
+.crt-transit__frag[data-mark="1"] {
+  min-width: var(--mark-w, 0px);
+  min-height: var(--mark-h, 0px);
+}
+
+.crt-transit__ch {
+  display: inline-block;
+  line-height: 0;
+  transform-origin: center bottom;
+}
+
+.crt-transit__slot {
+  position: relative;
+  display: inline-flex;
+  align-items: flex-end;
+}
+
+.crt-transit__ghost {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  pointer-events: none;
+}
+
+.crt-transit__ghost-abs {
+  position: absolute;
+  bottom: 0;
+  pointer-events: none;
+}
+
+.crt-transit__caret {
+  position: absolute;
+  bottom: 0;
+  width: var(--recall-caret-w, 0.6em);
+  height: var(--recall-caret-h, 1em);
+  background: var(--recall-caret-fill, #e6f0ff);
+  pointer-events: none;
+}
+
+.crt-transit__ch canvas {
+  display: block;
+  image-rendering: pixelated;
+}

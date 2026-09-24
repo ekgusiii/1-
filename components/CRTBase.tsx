@@ -213,7 +213,9 @@ export function CRTBase() {
     let cssH = 1;
     let dpr = 1;
     let raf = 0;
-    const start = performance.now();
+    let sim = 0;
+    let lastNow = performance.now();
+    let flick = 0;
 
     const resize = () => {
       cssW = window.innerWidth;
@@ -233,11 +235,16 @@ export function CRTBase() {
     const tick = (now: number) => {
       raf = window.requestAnimationFrame(tick);
       const share = readMoireShare();
+      sim += ((now - lastNow) / 1000) * share.timeScale;
+      lastNow = now;
+      if (share.timeScale > 0) {
+        flick = (Math.random() * 2 - 1) * 0.008 * share.timeScale;
+      }
 
       gl.useProgram(program);
       gl.viewport(0, 0, width, height);
-      gl.uniform1f(uTime, (now - start) / 1000);
-      gl.uniform1f(uFlick, (Math.random() * 2 - 1) * 0.008);
+      gl.uniform1f(uTime, sim);
+      gl.uniform1f(uFlick, flick);
       gl.uniform2f(
         uMouse,
         share.hasPointer ? share.mouseX : cssW * 0.5,
@@ -247,6 +254,7 @@ export function CRTBase() {
       gl.uniform1f(uEnergy, share.hasPointer ? share.energy : 0);
       gl.uniform2f(uResolution, cssW, cssH);
       gl.uniform1f(uDpr, dpr);
+      canvas.style.opacity = String(0.65 + share.scanBoost * 0.22);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
     };
 

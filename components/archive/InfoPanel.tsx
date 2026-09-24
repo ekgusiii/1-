@@ -3,14 +3,22 @@ import {useLayoutEffect, useState} from "react";
 import {ARCHIVE} from "@/components/archive/archiveConfig";
 import type {ArchiveItem} from "@/components/archive/archiveItems";
 
+export type InfoSide = "left" | "right";
+
 type InfoPanelProps = {
   item: ArchiveItem;
   box: {x: number; y: number; w: number; h: number};
   open: boolean;
+  side: InfoSide;
+  shift: number;
   barTitle: string;
   onEnter: () => void;
   onLeave: () => void;
 };
+
+export function decidePanelSide(winX: number): InfoSide {
+  return winX >= ARCHIVE.infoWidth + ARCHIVE.infoEdge ? "left" : "right";
+}
 
 function infoTitle(item: ArchiveItem, barTitle: string) {
   const raw = (barTitle || item.filename || item.title || "FILE").toUpperCase();
@@ -18,7 +26,7 @@ function infoTitle(item: ArchiveItem, barTitle: string) {
   return `${base}.TXT`;
 }
 
-export function InfoPanel({item, box, open, barTitle, onEnter, onLeave}: InfoPanelProps) {
+export function InfoPanel({item, box, open, side, shift, barTitle, onEnter, onLeave}: InfoPanelProps) {
   const [flush, setFlush] = useState(box);
   const lines = [
     item.projectTitle ?? item.title,
@@ -35,14 +43,15 @@ export function InfoPanel({item, box, open, barTitle, onEnter, onLeave}: InfoPan
     }
     const rect = win.getBoundingClientRect();
     setFlush({x: rect.left, y: rect.top, w: rect.width, h: rect.height});
-  }, [item.id, open, box.x, box.y, box.w, box.h]);
+  }, [item.id, open, side, shift, box.x, box.y, box.w, box.h]);
 
   return (
     <aside
       className="arc-info"
       data-open={open ? "1" : "0"}
+      data-side={side}
       style={{
-        left: flush.x - ARCHIVE.infoWidth,
+        left: side === "right" ? flush.x + flush.w : flush.x - ARCHIVE.infoWidth,
         top: flush.y,
         width: ARCHIVE.infoWidth,
         height: flush.h,

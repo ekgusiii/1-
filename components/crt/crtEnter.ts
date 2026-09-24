@@ -6,7 +6,7 @@ export const APPROACH_END = 0.4;
 export const SURGE_END = 0.75;
 export const ENTER_END = 1.05;
 
-export type EnterPhase = "idle" | "dwell" | "inhale" | "surge" | "land";
+export type EnterPhase = "idle" | "dwell" | "transit" | "inhale" | "surge" | "land";
 
 export type EnterState = {
   phase: EnterPhase;
@@ -146,10 +146,12 @@ export function tickEnter(
     } else {
       state.dwell += dt;
       if (state.dwell >= DWELL_TIME) {
-        state.phase = "inhale";
+        state.phase = "transit";
         state.t = 0;
       }
     }
+  } else if (state.phase === "transit") {
+    state.t += dt;
   } else if (state.phase === "inhale") {
     if (!inZone) {
       state.t -= dt * 1.35;
@@ -175,6 +177,10 @@ export function tickEnter(
       state.t = ENTER_END;
       finished = true;
     }
+  }
+
+  if (state.phase === "transit") {
+    return {finished: false, visuals: enterVisuals(0, 0)};
   }
 
   const foreshadow =

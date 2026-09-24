@@ -13,7 +13,6 @@ import {ArchiveDesktop} from "@/components/archive/ArchiveDesktop";
 import {ArchiveSequence} from "@/components/archive/ArchiveSequence";
 import type {ArchivePhase} from "@/components/archive/archiveConfig";
 import {
-  DWELL_TIME,
   INITIAL_ENTER,
   enterVisuals,
   inEnterZone,
@@ -33,7 +32,9 @@ import {
   createGuideRefract,
   type GuideRefract,
 } from "@/components/crt/guideRefract";
+import { CrtTransit } from "@/components/crt/CrtTransit";
 import { MainFx } from "@/components/MainFx";
+import { readMoireShare, publishTransitShare } from "@/lib/moireShare";
 import { publishEnter } from "@/lib/sound/soundBus";
 import type { Project } from "@/sanity/lib/queries";
 
@@ -58,6 +59,9 @@ export function CrtScreen({ projects, routeSlug = null }: CrtScreenProps) {
   const enterPhaseRef = useRef(INITIAL_ENTER.phase);
   const lastVisRef = useRef(enterVisuals(0, 0));
   const archiveOnRef = useRef(Boolean(routeSlug));
+  const transitOnRef = useRef(false);
+  const simTimeRef = useRef(0);
+  const exitRef = useRef<HTMLDivElement>(null);
   const fxRootRef = useRef<HTMLDivElement>(null);
   const nearestIdRef = useRef<string | null>(null);
   const hotspotsRef = useRef<Hotspot[]>([]);
@@ -68,6 +72,15 @@ export function CrtScreen({ projects, routeSlug = null }: CrtScreenProps) {
   const [mode, setMode] = useState<CrtMode>(routeSlug ? "archive" : "explore");
   const [playing, setPlaying] = useState<GuideProgram | null>(null);
   const [archiveOn, setArchiveOn] = useState(Boolean(routeSlug));
+  const [transitOn, setTransitOn] = useState(false);
+  const freezePlateRef = useRef<HTMLCanvasElement | null>(null);
+  const [freezePlate, setFreezePlate] = useState<HTMLCanvasElement | null>(null);
+  const [freezeBounds, setFreezeBounds] = useState<{
+    minX: number;
+    maxX: number;
+    minY: number;
+    maxY: number;
+  } | null>(null);
   const [archivePhase, setArchivePhase] = useState<ArchivePhase | null>(
     routeSlug ? "signal" : null,
   );
@@ -188,8 +201,10 @@ export function CrtScreen({ projects, routeSlug = null }: CrtScreenProps) {
 
     const tick = (now: number) => {
       const previous = lastTimeRef.current || now;
-      const dt = Math.min(0.05, (now - previous) / 1000);
+      const rawDt = Math.min(0.05, (now - previous) / 1000);
       lastTimeRef.current = now;
+      const dt = rawDt * (transitOnRef.current ? readMoireShare().timeScale : 1);
+      simTimeRef.current += dt;
 
       const node = glassRef.current;
       const pointer = pointerRef.current;
@@ -223,7 +238,7 @@ export function CrtScreen({ projects, routeSlug = null }: CrtScreenProps) {
         rect?.width ?? 0,
         rect?.height ?? 0,
         current.misalign,
-        now,
+        simTimeRef.current * 1000,
         locked,
         glRef.current?.getTextBounds(),
       );
@@ -263,26 +278,21 @@ export function CrtScreen({ projects, routeSlug = null }: CrtScreenProps) {
 
         if (
           prevPhase === "dwell" &&
-          nextPhase === "inhale" &&
+          nextPhase === "transit" &&
           modeRef.current === "explore" &&
           hasProgramsRef.current
         ) {
-          enterRef.current = {
-            phase: "dwell",
-            dwell: DWELL_TIME,
-            t: 0,
-          };
-          enterPhaseRef.current = "dwell";
-          archiveOnRef.current = true;
-          setArchiveOn(true);
-          setArchivePhase("moire");
-          if (window.history.state?.crtView !== "archive") {
-            window.history.pushState(
-              {crtView: "archive"},
-              "",
-              window.location.href,
-            );
-          }
+          publishTransitShare({
+            timeScale: 0,
+            interact: false,
+            scanBoost: 0,
+            hideText: false,
+          });
+          freezePlateRef.current = null;
+          setFreezePlate(null);
+          setFreezeBounds(null);
+          transitOnRef.current = true;
+          setTransitOn(true);
         }
       }
 
@@ -296,9 +306,9 @@ export function CrtScreen({ projects, routeSlug = null }: CrtScreenProps) {
         mouseY: extras.mouseY,
         glow: extras.glow,
         misalign: current.misalign,
-        time: now / 1000,
+        time: simTimeRef.current,
         fov: extras.fov,
-        textOpacity: locked ? 0 : 1,
+        textOpacity: locked || readMoireShare().hideText ? 0 : 1,
         textPeakX: extras.textPeakX,
         textPeakY: extras.textPeakY,
         textBulge: extras.textBulge,
@@ -320,6 +330,22 @@ export function CrtScreen({ projects, routeSlug = null }: CrtScreenProps) {
         bandShiftX: locked ? 0 : extras.bandShiftX,
         bandShiftY: locked ? 0 : extras.bandShiftY,
       });
+
+      if (
+        transitOnRef.current &&
+        !freezePlateRef.current &&
+        canvasRef.current &&
+        canvasRef.current.width > 0
+      ) {
+        const src = canvasRef.current;
+        const dst = document.createElement("canvas");
+        dst.width = src.width;
+        dst.height = src.height;
+        dst.getContext("2d")?.drawImage(src, 0, 0);
+        freezePlateRef.current = dst;
+        setFreezePlate(dst);
+        setFreezeBounds(glRef.current?.getTextBounds() ?? null);
+      }
 
       if (node) {
         node.style.setProperty(
@@ -402,7 +428,7 @@ export function CrtScreen({ projects, routeSlug = null }: CrtScreenProps) {
   }, [mode]);
 
   const updatePointer = (clientX: number, clientY: number) => {
-    if (archiveOnRef.current) {
+    if (archiveOnRef.current || transitOnRef.current) {
       return;
     }
     const node = glassRef.current;
@@ -442,8 +468,22 @@ export function CrtScreen({ projects, routeSlug = null }: CrtScreenProps) {
     }
   };
 
+  const finishTransit = () => {
+    transitOnRef.current = false;
+    setTransitOn(false);
+    archiveOnRef.current = true;
+    setArchiveOn(true);
+    setArchivePhase("signal");
+    modeRef.current = "archive";
+    setMode("archive");
+    if (window.history.state?.crtView !== "archive") {
+      window.history.pushState({crtView: "archive"}, "", window.location.href);
+    }
+  };
+
   return (
     <main className="stage" data-archive-phase={archivePhase ?? "off"}>
+      <div ref={exitRef} className="crt-main-exit">
       <div
         ref={fxRootRef}
         className="archive-fx-root"
@@ -495,11 +535,21 @@ export function CrtScreen({ projects, routeSlug = null }: CrtScreenProps) {
         </div>
         {showExploreFx ? <MainFx /> : null}
       </div>
+      {transitOn ? (
+        <CrtTransit
+          plate={freezePlate}
+          bounds={freezeBounds}
+          projects={projects}
+          exitRef={exitRef}
+          onDone={finishTransit}
+        />
+      ) : null}
+      </div>
       {archiveOn ? (
         <ArchiveSequence
           fxRootRef={fxRootRef}
           onPhaseChange={handleArchivePhase}
-          preset={routeSlug ? "signal" : undefined}
+          preset="signal"
         >
           {archivePhase === "signal" ? (
             <ArchiveDesktop projects={projects} openSlug={routeSlug} />

@@ -644,7 +644,13 @@ export function GhostText() {
       node.style.textShadow = "none";
     };
 
+    let sim = 0;
+    let lastNow = performance.now();
+
     const onPointerMove = (event: PointerEvent) => {
+      if (!readMoireShare().interact) {
+        return;
+      }
       mouseX = event.clientX;
       mouseY = event.clientY;
       if (!hasPointer) {
@@ -669,11 +675,10 @@ export function GhostText() {
       if (travel >= threshold) {
         travel = 0;
         threshold = range(70, 240);
-        const now = performance.now();
-        spawn(now);
+        spawn(sim);
         const energy = readMoireShare().energy;
         if (energy > 0.6 && rand() < 0.3) {
-          spawn(now);
+          spawn(sim);
         }
       }
     };
@@ -681,6 +686,8 @@ export function GhostText() {
     const tick = (now: number) => {
       raf = window.requestAnimationFrame(tick);
       const share = readMoireShare();
+      sim += (now - lastNow) * share.timeScale;
+      lastNow = now;
       const cx = share.hasPointer ? share.mouseX : mouseX;
       const cy = share.hasPointer ? share.mouseY : mouseY;
       const energy = share.hasPointer ? share.energy : 0;
@@ -697,7 +704,7 @@ export function GhostText() {
           continue;
         }
 
-        const age = now - ghost.born;
+        const age = sim - ghost.born;
         const appearEnd = ghost.appearMs;
         const holdEnd = appearEnd + ghost.holdMs;
         const exitEnd = holdEnd + ghost.exitMs;
@@ -752,7 +759,7 @@ export function GhostText() {
         const reveal = 0.35 + 0.65 * near * (0.4 + 0.6 * energy);
         opacity *= reveal;
 
-        ox += near * (Math.random() * 2 - 1) * energy * 3;
+        ox += near * (Math.random() * 2 - 1) * energy * 3 * share.timeScale;
         if (
           overlapsWelcome(
             ghost.x + ox,

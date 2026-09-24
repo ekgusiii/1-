@@ -2,7 +2,7 @@
 
 import {useEffect, useRef} from "react";
 
-import {publishMoireShare} from "@/lib/moireShare";
+import {publishMoireShare, readMoireShare} from "@/lib/moireShare";
 import {publishMotion} from "@/lib/sound/soundBus";
 
 const VERT = `
@@ -293,7 +293,8 @@ export function MoireCursor() {
     let energy = 0;
     let prevX = 0;
     let prevY = 0;
-    const start = performance.now();
+    let sim = 0;
+    let lastNow = performance.now();
 
     const resize = () => {
       cssW = window.innerWidth;
@@ -311,6 +312,9 @@ export function MoireCursor() {
     };
 
     const onPointerMove = (event: PointerEvent) => {
+      if (!readMoireShare().interact) {
+        return;
+      }
       targetX = event.clientX;
       targetY = event.clientY;
       if (!hasPointer) {
@@ -324,17 +328,21 @@ export function MoireCursor() {
 
     const tick = (now: number) => {
       raf = window.requestAnimationFrame(tick);
+      const share = readMoireShare();
+      sim += ((now - lastNow) / 1000) * share.timeScale;
+      lastNow = now;
+      const follow = share.interact ? share.timeScale : 0;
 
-      mouseX += (targetX - mouseX) * 0.12;
-      mouseY += (targetY - mouseY) * 0.12;
-      lagX += (mouseX - lagX) * 0.035;
-      lagY += (mouseY - lagY) * 0.035;
+      mouseX += (targetX - mouseX) * 0.12 * follow;
+      mouseY += (targetY - mouseY) * 0.12 * follow;
+      lagX += (mouseX - lagX) * 0.035 * follow;
+      lagY += (mouseY - lagY) * 0.035 * follow;
 
       const offX = mouseX - lagX;
       const offY = mouseY - lagY;
       const targetEnergy = Math.min(1, Math.max(0, Math.hypot(offX, offY) / 140));
-      energy += (targetEnergy - energy) * 0.06;
-      const speed = hasPointer
+      energy += (targetEnergy - energy) * 0.06 * (follow > 0 ? follow : 0);
+      const speed = hasPointer && follow > 0
         ? Math.min(1, Math.hypot(mouseX - prevX, mouseY - prevY) / 28)
         : 0;
       prevX = mouseX;
@@ -362,7 +370,7 @@ export function MoireCursor() {
         return;
       }
 
-      gl.uniform1f(uTime, (now - start) / 1000);
+      gl.uniform1f(uTime, sim);
       gl.uniform2f(uMouse, mouseX, mouseY);
       gl.uniform2f(uOffset, offX, offY);
       gl.uniform1f(uEnergy, energy);
