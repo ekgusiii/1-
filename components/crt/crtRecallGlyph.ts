@@ -1,6 +1,4 @@
 import {RECALL, type RecallFace, type RecallGlyph} from "@/components/crt/crtRecall";
-import {RECALL_MATTER} from "@/components/crt/crtRecallMatter";
-import {RECALL_RETRO} from "@/components/crt/crtRecallRetro";
 
 const cache = new Map<string, HTMLCanvasElement>();
 
@@ -17,25 +15,38 @@ function faceStack(face: RecallFace) {
     return cond ? `${cond}, "Arial Narrow", sans-serif` : `"Barlow Condensed", "Arial Narrow", sans-serif`;
   }
   if (face === "display") {
-    return cond
-      ? `${cond}, ${osw || "Oswald"}, "Arial Narrow", sans-serif`
-      : `"Barlow Condensed", "Arial Narrow", sans-serif`;
+    return osw ? `${osw}, Impact, sans-serif` : `Oswald, Impact, sans-serif`;
   }
   return cond ? `${cond}, "Arial Narrow", sans-serif` : `"Barlow Condensed", "Arial Narrow", sans-serif`;
 }
 
-function faceWeight(_face: RecallFace, weight: number) {
-  return Math.max(400, Math.min(500, weight));
+function faceWeight(face: RecallFace, weight: number) {
+  if (face === "raster") {
+    return 600;
+  }
+  if (face === "display") {
+    return Math.min(500, Math.max(400, weight));
+  }
+  return 500;
 }
 
 function scaleFor(size: number) {
   if (size >= RECALL.sizes.huge) {
     return {
-      pixel: 1.12,
+      pixel: RECALL.pixelHuge,
       cell: RECALL.cellHuge,
-      bloom: 0.28,
-      bloomPx: 4,
-      offset: 1,
+      bloom: RECALL.bloomHuge,
+      bloomPx: RECALL.bloomPxHuge,
+      offset: RECALL.offsetHuge,
+    };
+  }
+  if (size >= RECALL.sizes.large) {
+    return {
+      pixel: RECALL.pixelLarge,
+      cell: RECALL.cellLarge,
+      bloom: RECALL.bloomLarge,
+      bloomPx: RECALL.bloomPxLarge,
+      offset: RECALL.offsetLarge,
     };
   }
   if (size >= RECALL.sizes.medium) {
@@ -43,16 +54,16 @@ function scaleFor(size: number) {
       pixel: RECALL.pixelMedium,
       cell: RECALL.cellMedium,
       bloom: RECALL.bloomMedium,
-      bloomPx: 2.2,
-      offset: 1,
+      bloomPx: RECALL.bloomPxMedium,
+      offset: RECALL.offsetMedium,
     };
   }
   return {
     pixel: RECALL.pixelMeta,
     cell: RECALL.cellMeta,
     bloom: RECALL.bloomMeta,
-    bloomPx: 1.4,
-    offset: 1,
+    bloomPx: RECALL.bloomPxMeta,
+    offset: RECALL.offsetMeta,
   };
 }
 
@@ -113,7 +124,7 @@ function drawSolidGlyph(look: RecallGlyph, height: number) {
   pctx.font = `${weight} ${height}px ${stack}`;
   pctx.textBaseline = "alphabetic";
   const metrics = pctx.measureText(look.ch);
-  const stroke = Math.max(1, height * RECALL.strokeEm);
+  const stroke = height * RECALL.strokeEm;
   const left = Math.ceil(Math.max(metrics.actualBoundingBoxLeft, 0) + stroke);
   const right = Math.ceil(Math.max(metrics.actualBoundingBoxRight, height * 0.4) + stroke);
   const asc = Math.ceil(Math.max(metrics.actualBoundingBoxAscent, height * 0.75) + stroke);
@@ -184,10 +195,10 @@ function phosphorTexture(src: HTMLCanvasElement, cell: number) {
         continue;
       }
       const triad = x % 3;
-      const scan = 1 - strength * 0.22 * ((y % cellH) / cellH);
-      data[i] = Math.round(data[i] * scan * (triad === 0 ? 1 : 1 - strength * 0.22));
-      data[i + 1] = Math.round(data[i + 1] * scan * (triad === 1 ? 1 : 1 - strength * 0.14));
-      data[i + 2] = Math.round(data[i + 2] * scan * (triad === 2 ? 1 : 1 - strength * 0.1));
+      const scan = 1 - strength * 0.35 * ((y % cellH) / cellH);
+      data[i] = Math.round(data[i] * scan * (triad === 0 ? 1 : 1 - strength * 0.55));
+      data[i + 1] = Math.round(data[i + 1] * scan * (triad === 1 ? 1 : 1 - strength * 0.35));
+      data[i + 2] = Math.round(data[i + 2] * scan * (triad === 2 ? 1 : 1 - strength * 0.45));
     }
   }
   ctx.putImageData(img, 0, 0);
@@ -248,8 +259,7 @@ function renderGlyph(look: RecallGlyph) {
   }
   const scale = scaleFor(look.size);
   const mask = buildMask(look, scale.pixel);
-  const soft = Math.max(0, look.soft);
-  const pad = Math.ceil(soft + RECALL_MATTER.registerPx + 3);
+  const pad = Math.ceil(scale.bloomPx + scale.offset + RECALL.greenExpand + 4);
   const out = document.createElement("canvas");
   out.width = mask.width + pad * 2;
   out.height = mask.height + pad * 2;
@@ -257,25 +267,26 @@ function renderGlyph(look: RecallGlyph) {
   if (!ctx) {
     return out;
   }
-  const fill = look.ghost
-    ? RECALL_RETRO.ghostFill
-    : look.ink === "amber"
-      ? RECALL_MATTER.amber
-      : RECALL_MATTER.pale;
-  const core = tintMask(mask, fill);
-  const pink = tintMask(mask, RECALL_MATTER.pink);
-  const cyan = tintMask(mask, RECALL_MATTER.cyan);
-  const shift = RECALL_MATTER.registerPx * (look.boxed ? 0.65 : 1);
-  const register = RECALL_MATTER.registerAlpha * (look.boxed ? 0.55 : 1);
-  ctx.globalCompositeOperation = "source-over";
-  ctx.globalAlpha = register;
-  ctx.drawImage(pink, pad - shift, pad);
-  ctx.drawImage(cyan, pad + shift, pad);
+  const core = tintMask(mask, RECALL.core);
+  const pink = tintMask(mask, RECALL.pink);
+  const green = tintMask(expandMask(mask, RECALL.greenExpand), RECALL.green);
   ctx.save();
-  ctx.filter = soft > 0.04 ? `blur(${soft}px)` : "none";
-  ctx.globalAlpha = 1;
+  ctx.filter = `blur(${scale.bloomPx}px)`;
+  ctx.globalAlpha = look.bloom * scale.bloom;
   ctx.drawImage(core, pad, pad);
   ctx.restore();
+  ctx.globalCompositeOperation = "lighter";
+  ctx.globalAlpha = RECALL.greenAlpha;
+  ctx.drawImage(
+    green,
+    pad + look.greenDx * scale.offset - RECALL.greenExpand,
+    pad + look.greenDy * scale.offset - RECALL.greenExpand,
+  );
+  ctx.globalAlpha = RECALL.pinkAlpha;
+  ctx.drawImage(pink, pad + look.pinkDx * scale.offset, pad + look.pinkDy * scale.offset);
+  ctx.globalCompositeOperation = "source-over";
+  ctx.globalAlpha = 1;
+  ctx.drawImage(core, pad, pad);
   phosphorTexture(out, scale.cell);
   return out;
 }
@@ -288,10 +299,6 @@ export function rasterRecallGlyph(look: RecallGlyph) {
     look.sx.toFixed(3),
     look.sy.toFixed(3),
     look.weight,
-    look.ink,
-    look.boxed ? "b" : "o",
-    look.ghost ? "g" : "l",
-    look.soft.toFixed(2),
     look.pinkDx.toFixed(2),
     look.pinkDy.toFixed(2),
     look.greenDx.toFixed(2),

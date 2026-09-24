@@ -1,70 +1,62 @@
 import type {Project} from "@/sanity/lib/queries";
-import {
-  RECALL_RETRO,
-  retroAppearLook,
-  retroAppearMs,
-  retroCursorOn,
-  retroExtraBlinks,
-  retroGhostLook,
-  retroGhostMs,
-  retroMarkAlpha,
-  retroTrackFor,
-  retroUnit,
-} from "@/components/crt/crtRecallRetro";
 
 export const RECALL = {
-  durationMs: 5000,
-  silenceMs: 260,
+  durationMs: 5500,
+  silenceMs: 600,
+  clearByMs: 4600,
+  playSoloMs: 5100,
   writeSpeed: {
     fast: 1,
     mid: 1,
     slow: 1,
+    snap: 1,
   },
   eraseSpeed: {
     fast: 1,
     mid: 1,
     slow: 1,
+    snap: 1,
   },
-  writeMs: {
+  typePace: {
     fast: [30, 70],
     mid: [80, 140],
     slow: [150, 280],
+    snap: [40, 50],
   },
-  eraseMs: {
+  erasePace: {
     fast: [30, 60],
     mid: [80, 140],
     slow: [160, 300],
+    snap: [40, 50],
   },
   holdDuration: {
     flash: 70,
     trace: 160,
-    short: 300,
-    pause: 320,
-    meta: 900,
-    primary: 1050,
-    long: 1180,
+    short: 360,
+    pause: 260,
+    meta: 1000,
+    primary: 1160,
+    long: 1260,
   },
   recallDelay: {
-    soon: 2280,
-    mid: 2460,
-    late: 2880,
-    slug: 3680,
-    span: 4220,
+    soon: 260,
+    mid: 520,
+    late: 840,
   },
   overlapTiming: {
-    tight: 90,
+    tight: 200,
     mid: 420,
-    loose: 1520,
+    loose: 760,
   },
   typeMsMin: 30,
-  typeMsMax: 70,
+  typeMsMax: 280,
   typePauseChance: 0,
   typePauseMin: 0,
   typePauseMax: 0,
   typeBurstChance: 0,
   typeBurstMs: 16,
   deleteMsMin: 30,
-  deleteMsMax: 60,
+  deleteMsMax: 300,
   deletePauseChance: 0,
   deletePauseMin: 0,
   deletePauseMax: 0,
@@ -72,47 +64,33 @@ export const RECALL = {
   deleteBurstMs: 16,
   sizes: {
     meta: 12,
-    small: 13,
-    medium: 36,
-    large: 42,
-    huge: 80,
-    oversize: 120,
+    small: 14,
+    medium: 28,
+    large: 36,
+    huge: 104,
+    oversize: 118,
   },
-  yearVh: 0.2,
-  yearVhMin: 0.15,
-  yearVhMax: 0.25,
-  soloVh: 0.3,
-  spotJitterPx: 40,
-  trackTight: 0.12,
-  trackWord: 0.15,
-  trackWide: 0.36,
-  pale: "rgb(238, 246, 255)",
-  amber: "rgb(176, 162, 42)",
-  edge: "rgb(8, 18, 48)",
-  markFill: "rgb(0, 0, 0)",
-  core: "rgb(238, 246, 255)",
-  pink: "rgb(255, 118, 168)",
-  green: "rgb(72, 230, 168)",
-  pinkAlpha: 0.3,
-  greenAlpha: 0.24,
-  pinkDx: -1.4,
-  pinkDy: 0.6,
-  greenDx: 1.5,
-  greenDy: -0.5,
+  pink: "rgb(255, 96, 176)",
+  core: "rgb(250, 252, 247)",
+  green: "rgb(72, 210, 118)",
+  pinkAlpha: 0.48,
+  greenAlpha: 0.68,
+  pinkDx: -1.5,
+  pinkDy: -1,
+  greenDx: 1.9,
+  greenDy: 1.6,
   offsetJitter: 0.35,
-  bloom: 0.1,
-  bloomInMark: 0.45,
-  bloomOut: 1.15,
-  bloomJitter: 0.03,
-  edgeJitter: 0.04,
-  gridStrength: 0.07,
-  strokeEm: 0.012,
-  greenExpand: 1,
+  bloom: 0.18,
+  bloomJitter: 0.06,
+  edgeJitter: 0.06,
+  gridStrength: 0.2,
+  strokeEm: 0,
+  greenExpand: 2,
   cellRatio: 0.85,
   pixelMeta: 1.08,
-  pixelMedium: 1.22,
-  pixelLarge: 1.32,
-  pixelHuge: 1.4,
+  pixelMedium: 1.28,
+  pixelLarge: 1.38,
+  pixelHuge: 1.48,
   cellMeta: 1.4,
   cellMedium: 1.7,
   cellLarge: 2,
@@ -130,6 +108,8 @@ export const RECALL = {
   offsetLarge: 1.45,
   offsetHuge: 1.9,
 };
+
+export const RECALL_PLAYBACK = "PLAYBACK";
 
 export const RECALL_IDENTITY = [
   "KDH",
@@ -152,14 +132,15 @@ export const RECALL_IDENTITY = [
 ] as const;
 
 export const RECALL_SPOTS = {
-  topLeft: {x: 8, y: 15},
-  topMid: {x: 38, y: 13},
-  midLeft: {x: 10, y: 44},
-  centerSide: {x: 54, y: 32},
-  midLow: {x: 34, y: 64},
-  botRight: {x: 70, y: 76},
-  botLeft: {x: 11, y: 78},
-  edgeRight: {x: 62, y: 50},
+  edge: {x: 5.5, y: 7.5},
+  topRight: {x: 66, y: 13},
+  midUp: {x: 34, y: 26},
+  centerBig: {x: 22, y: 38},
+  midLeft: {x: 9, y: 46},
+  midRight: {x: 58, y: 57},
+  lowLeft: {x: 8, y: 73},
+  botRight: {x: 69, y: 78},
+  lowRight: {x: 91, y: 73},
 } as const;
 
 export type RecallSpot = keyof typeof RECALL_SPOTS;
@@ -167,21 +148,26 @@ export type RecallMotion = "A" | "B" | "C" | "D";
 export type RecallFace = "raster" | "display" | "meta";
 export type RecallFrom = "year" | "title" | "category" | "slug" | "order";
 export type RecallSpeed = keyof typeof RECALL.writeSpeed;
-export type RecallInk = "pale" | "amber";
-export type RecallMark = "after" | "before";
-export type RecallInkMark = "digits" | "lastWord";
-export type RecallScale = "year" | "medium" | "meta";
+
+export const RECALL_TEMPO = {
+  A: {write: "fast", erase: "slow", hold: RECALL.holdDuration.primary},
+  B: {write: "slow", erase: "fast", hold: RECALL.holdDuration.short},
+  C: {write: "fast", erase: "fast", hold: RECALL.holdDuration.long},
+  D: {write: "slow", erase: "slow", hold: RECALL.holdDuration.meta},
+  F: {write: "fast", erase: "fast", hold: RECALL.holdDuration.flash},
+} as const;
 
 export const RECALL_BEATS = {
   y22: 0,
-  kdh: RECALL.overlapTiming.tight,
-  p1: RECALL.overlapTiming.mid,
-  cat: RECALL.overlapTiming.loose,
-  y22b: RECALL.recallDelay.soon,
-  y24: RECALL.recallDelay.mid,
-  sel: RECALL.recallDelay.late,
-  slug: RECALL.recallDelay.slug,
-  span: RECALL.recallDelay.span,
+  kdh: 70,
+  p1: 180,
+  cat: 1560,
+  y22b: 2120,
+  y24: 2180,
+  sel: 2420,
+  slug: 3760,
+  span: 3980,
+  play: 3080,
 };
 
 export type RecallOp =
@@ -208,15 +194,8 @@ export type RecallFrag = {
   endBy?: number;
   write?: RecallSpeed;
   erase?: RecallSpeed;
-  scale?: RecallScale;
-  yearVh?: number;
-  soloGrow?: boolean;
-  ink?: RecallInk;
-  inkMark?: RecallInkMark;
-  mark?: RecallMark;
-  markDelay?: number;
-  markLead?: number;
-  markExit?: number;
+  anchor?: "left" | "right";
+  fitMaxVw?: number;
   play: RecallOp[];
 };
 
@@ -226,44 +205,40 @@ export const RECALL_FRAGS: RecallFrag[] = [
     text: "2022",
     from: "year",
     fromIndex: 0,
-    spot: "midLeft",
+    spot: "lowLeft",
     face: "display",
     size: RECALL.sizes.medium,
-    scale: "year",
-    yearVh: 0.22,
-    soloGrow: true,
     weight: 500,
-    track: RECALL.trackTight,
-    opacity: 0.92,
+    track: 0.18,
+    opacity: 0.88,
     motion: "B",
     start: RECALL_BEATS.y22,
-    write: "fast",
-    erase: "slow",
+    endBy: RECALL.clearByMs,
+    write: RECALL_TEMPO.A.write,
+    erase: RECALL_TEMPO.A.erase,
     play: [
       {op: "type"},
-      {op: "hold", ms: RECALL.holdDuration.primary},
-      {op: "deleteTo", n: 1},
-      {op: "hold", ms: RECALL.holdDuration.trace},
+      {op: "hold", ms: RECALL_TEMPO.A.hold},
       {op: "delete"},
     ],
   },
   {
     id: "kdh",
     text: "KDH",
-    spot: "topLeft",
+    spot: "edge",
     face: "meta",
     size: RECALL.sizes.meta,
-    scale: "meta",
-    weight: 400,
-    track: RECALL.trackWide,
-    opacity: 0.5,
+    weight: 500,
+    track: 0.32,
+    opacity: 0.46,
     motion: "A",
     start: RECALL_BEATS.kdh,
-    write: "fast",
-    erase: "fast",
+    endBy: RECALL.clearByMs,
+    write: RECALL_TEMPO.F.write,
+    erase: RECALL_TEMPO.F.erase,
     play: [
       {op: "type"},
-      {op: "hold", ms: RECALL.holdDuration.flash},
+      {op: "hold", ms: RECALL_TEMPO.F.hold},
       {op: "delete"},
     ],
   },
@@ -273,21 +248,20 @@ export const RECALL_FRAGS: RecallFrag[] = [
     from: "title",
     fromIndex: 0,
     maxChars: 10,
-    spot: "topMid",
+    spot: "midUp",
     face: "display",
-    size: 40,
-    scale: "medium",
+    size: RECALL.sizes.large,
     weight: 500,
-    track: RECALL.trackTight,
+    track: 0.05,
     opacity: 0.92,
     motion: "B",
     start: RECALL_BEATS.p1,
-    write: "mid",
-    erase: "fast",
-    inkMark: "digits",
+    endBy: RECALL.clearByMs,
+    write: RECALL_TEMPO.B.write,
+    erase: RECALL_TEMPO.B.erase,
     play: [
       {op: "type"},
-      {op: "hold", ms: RECALL.holdDuration.short},
+      {op: "hold", ms: RECALL_TEMPO.B.hold},
       {op: "delete"},
     ],
   },
@@ -297,20 +271,20 @@ export const RECALL_FRAGS: RecallFrag[] = [
     from: "category",
     fromIndex: 0,
     maxChars: 12,
-    spot: "edgeRight",
+    spot: "topRight",
     face: "meta",
-    size: 36,
-    scale: "medium",
+    size: 20,
     weight: 400,
-    track: RECALL.trackWord,
-    opacity: 0.8,
+    track: 0.2,
+    opacity: 0.78,
     motion: "B",
     start: RECALL_BEATS.cat,
-    write: "mid",
-    erase: "mid",
+    endBy: RECALL.clearByMs,
+    write: RECALL_TEMPO.D.write,
+    erase: RECALL_TEMPO.D.erase,
     play: [
       {op: "type"},
-      {op: "hold", ms: RECALL.holdDuration.meta},
+      {op: "hold", ms: RECALL_TEMPO.D.hold},
       {op: "delete"},
     ],
   },
@@ -319,17 +293,17 @@ export const RECALL_FRAGS: RecallFrag[] = [
     text: "2022",
     from: "year",
     fromIndex: 0,
-    spot: "botLeft",
+    spot: "lowLeft",
     face: "meta",
     size: RECALL.sizes.small,
-    scale: "meta",
     weight: 400,
-    track: RECALL.trackWord,
-    opacity: 0.52,
+    track: 0.26,
+    opacity: 0.5,
     motion: "A",
     start: RECALL_BEATS.y22b,
-    write: "fast",
-    erase: "fast",
+    endBy: RECALL.clearByMs,
+    write: RECALL_TEMPO.F.write,
+    erase: RECALL_TEMPO.F.erase,
     play: [
       {op: "typeTo", n: 2},
       {op: "hold", ms: RECALL.holdDuration.flash},
@@ -341,54 +315,70 @@ export const RECALL_FRAGS: RecallFrag[] = [
     text: "2024",
     from: "year",
     fromIndex: 1,
-    spot: "centerSide",
+    spot: "centerBig",
     face: "raster",
-    size: RECALL.sizes.large,
-    scale: "year",
-    yearVh: 0.18,
-    weight: 400,
-    track: RECALL.trackTight,
+    size: RECALL.sizes.huge,
+    weight: 500,
+    track: -0.035,
     opacity: 0.94,
     motion: "C",
     start: RECALL_BEATS.y24,
-    write: "fast",
-    erase: "fast",
-    mark: "after",
-    markDelay: 80,
-    markExit: 200,
+    endBy: RECALL.clearByMs,
+    write: RECALL_TEMPO.C.write,
+    erase: RECALL_TEMPO.C.erase,
     play: [
       {op: "type"},
-      {op: "hold", ms: RECALL.holdDuration.long},
+      {op: "hold", ms: RECALL_TEMPO.C.hold},
       {op: "delete"},
+    ],
+  },
+  {
+    id: "play",
+    text: RECALL_PLAYBACK,
+    spot: "lowRight",
+    face: "raster",
+    size: RECALL.sizes.huge,
+    weight: 500,
+    track: 0.03,
+    opacity: 0.94,
+    motion: "B",
+    anchor: "right",
+    fitMaxVw: 45,
+    start: RECALL_BEATS.play,
+    write: "fast",
+    erase: "snap",
+    play: [
+      {op: "typeTo", n: 4, speed: "fast"},
+      {op: "hold", ms: 260},
+      {op: "type", speed: "fast"},
+      {op: "hold", ms: 1340},
+      {op: "delete", speed: "snap"},
     ],
   },
   {
     id: "sel",
     text: "SELECTED",
-    spot: "midLow",
+    spot: "midRight",
     face: "display",
-    size: 34,
-    scale: "medium",
-    weight: 400,
-    track: RECALL.trackWord,
-    opacity: 0.78,
+    size: RECALL.sizes.medium,
+    weight: 500,
+    track: 0.16,
+    opacity: 0.72,
     motion: "D",
     start: RECALL_BEATS.sel,
+    endBy: RECALL.clearByMs,
     write: "fast",
     erase: "fast",
-    ink: "amber",
-    mark: "before",
-    markLead: 260,
-    markExit: 90,
     play: [
       {op: "typeTo", n: 3, speed: "fast"},
-      {op: "hold", ms: RECALL.holdDuration.pause},
+      {op: "hold", ms: 280},
+      {op: "typeTo", n: 6, speed: "fast"},
+      {op: "hold", ms: 240},
       {op: "type", speed: "mid"},
-      {op: "hold", ms: RECALL.holdDuration.meta},
-      {op: "deleteTo", n: 3, speed: "fast"},
-      {op: "hold", ms: RECALL.holdDuration.pause},
+      {op: "hold", ms: 560},
+      {op: "deleteTo", n: 4, speed: "fast"},
+      {op: "hold", ms: 260},
       {op: "type", speed: "fast"},
-      {op: "hold", ms: RECALL.holdDuration.trace},
       {op: "delete", speed: "fast"},
     ],
   },
@@ -398,17 +388,17 @@ export const RECALL_FRAGS: RecallFrag[] = [
     from: "slug",
     fromIndex: 0,
     maxChars: 8,
-    spot: "topMid",
+    spot: "midLeft",
     face: "meta",
     size: RECALL.sizes.meta,
-    scale: "meta",
     weight: 400,
-    track: RECALL.trackWide,
-    opacity: 0.44,
+    track: 0.24,
+    opacity: 0.42,
     motion: "A",
     start: RECALL_BEATS.slug,
-    write: "fast",
-    erase: "fast",
+    endBy: RECALL.clearByMs,
+    write: RECALL_TEMPO.F.write,
+    erase: RECALL_TEMPO.F.erase,
     play: [
       {op: "typeTo", n: 4},
       {op: "hold", ms: RECALL.holdDuration.flash},
@@ -418,20 +408,20 @@ export const RECALL_FRAGS: RecallFrag[] = [
   {
     id: "span",
     text: "22—26",
-    spot: "botRight",
+    spot: "lowLeft",
     face: "display",
-    size: 32,
-    scale: "medium",
+    size: 22,
     weight: 400,
-    track: RECALL.trackWord,
-    opacity: 0.82,
+    track: 0.14,
+    opacity: 0.76,
     motion: "A",
     start: RECALL_BEATS.span,
-    write: "mid",
-    erase: "fast",
+    endBy: RECALL.clearByMs,
+    write: RECALL_TEMPO.F.write,
+    erase: RECALL_TEMPO.F.erase,
     play: [
       {op: "type"},
-      {op: "hold", ms: RECALL.holdDuration.short},
+      {op: "hold", ms: RECALL.holdDuration.flash},
       {op: "delete"},
     ],
   },
@@ -454,29 +444,12 @@ export type RecallGlyph = {
   dy: number;
   track: number;
   weight: number;
-  ink: RecallInk;
-  boxed: boolean;
   pinkDx: number;
   pinkDy: number;
   greenDx: number;
   greenDy: number;
   bloom: number;
   seed: number;
-  ghost: boolean;
-  fade: number;
-  soft: number;
-};
-
-export type RecallGhost = {
-  index: number;
-  glyph: RecallGlyph;
-  opacity: number;
-  blur: number;
-};
-
-export type RecallCursor = {
-  index: number;
-  on: boolean;
 };
 
 export type RecallView = {
@@ -484,13 +457,6 @@ export type RecallView = {
   key: string;
   text: string;
   glyphs: RecallGlyph[];
-  ghosts: RecallGhost[];
-  liveA: number;
-  liveB: number;
-  textLen: number;
-  step: boolean;
-  cursor: RecallCursor | null;
-  markAlpha: number;
   anchor: "left" | "right";
   x: number;
   y: number;
@@ -499,9 +465,7 @@ export type RecallView = {
   track: number;
   opacity: number;
   trace: boolean;
-  mark: boolean;
-  markW: number;
-  markH: number;
+  caret: boolean;
 };
 
 type TypeDir = "ltr" | "rtl";
@@ -514,13 +478,6 @@ type CompiledFrame = {
   cycle: number;
 };
 
-type HideEvent = {
-  index: number;
-  at: number;
-  cycle: number;
-  persist: number;
-};
-
 type CompiledFrag = {
   id: string;
   text: string;
@@ -531,23 +488,7 @@ type CompiledFrag = {
   track: number;
   opacity: number;
   anchor: "left" | "right";
-  typeDir: TypeDir;
-  delDir: TypeDir;
-  ink: RecallInk;
-  inkMark?: RecallInkMark;
-  scale: RecallScale;
-  yearVh: number;
-  soloGrow: boolean;
-  step: boolean;
-  wantCursor: boolean;
-  cursorRank: number;
-  extraBlinks: number;
-  snapIndex: number;
-  hides: HideEvent[];
-  markAt: number;
-  markUntil: number;
-  markW: number;
-  markH: number;
+  fitMaxVw?: number;
   frames: CompiledFrame[];
 };
 
@@ -578,71 +519,16 @@ function motionDirs(motion: RecallMotion): {type: TypeDir; del: TypeDir; anchor:
 }
 
 function stepMs(kind: "type" | "delete", seed: string, ch: string, speed: RecallSpeed) {
+  const range = kind === "type" ? RECALL.typePace[speed] : RECALL.erasePace[speed];
   const u = unit(seed);
-  const range = kind === "type" ? RECALL.writeMs[speed] : RECALL.eraseMs[speed];
-  const pace = kind === "type" ? RECALL.writeSpeed[speed] : RECALL.eraseSpeed[speed];
   if (ch === " ") {
-    return Math.max(12, range[0] * 0.45 * pace);
+    return Math.max(8, Math.round(range[0] * 0.4));
   }
-  return (range[0] + u * (range[1] - range[0])) * pace;
+  return Math.round(range[0] + u * (range[1] - range[0]));
 }
 
 function emptyRange(len: number, type: TypeDir): [number, number] {
   return type === "ltr" ? [0, 0] : [len, len];
-}
-
-function glyphInk(frag: CompiledFrag, index: number, ch: string): RecallInk {
-  if (frag.ink === "amber") {
-    return "amber";
-  }
-  if (frag.inkMark === "digits" && /[0-9]/.test(ch)) {
-    return "amber";
-  }
-  if (frag.inkMark === "lastWord") {
-    const last = frag.text.split(/\s+/).at(-1) ?? "";
-    const start = frag.text.lastIndexOf(last);
-    if (start >= 0 && index >= start) {
-      return "amber";
-    }
-  }
-  return "pale";
-}
-
-function viewSize() {
-  if (typeof window === "undefined") {
-    return {w: 1440, h: 900};
-  }
-  return {w: window.innerWidth, h: window.innerHeight};
-}
-
-function sawFullWord(frag: CompiledFrag, cycle: number, ms: number) {
-  return frag.frames.some(
-    (frame) =>
-      frame.cycle === cycle &&
-      frame.b - frame.a === frag.text.length &&
-      frame.at <= ms,
-  );
-}
-
-function resolveFragSize(frag: CompiledFrag, chars: number, fullSeen: boolean) {
-  const {h} = viewSize();
-  if (frag.soloGrow && chars === 1 && fullSeen) {
-    return Math.round(h * RECALL.soloVh);
-  }
-  if (frag.scale === "year") {
-    const vh = Math.min(RECALL.yearVhMax, Math.max(RECALL.yearVhMin, frag.yearVh));
-    return Math.round(h * vh);
-  }
-  return frag.size;
-}
-
-function spotJitter(id: string) {
-  const {w, h} = viewSize();
-  const px = RECALL.spotJitterPx;
-  return {
-    x: (unit(`${id}:jx`) - 0.5) * 2 * (px / w) * 100,
-    y: (unit(`${id}:jy`) - 0.5) * 2 * (px / h) * 100,
-  };
 }
 
 function glyphLook(
@@ -651,8 +537,6 @@ function glyphLook(
   index: number,
   ch: string,
   frag: CompiledFrag,
-  size: number,
-  boxed: boolean,
 ): RecallGlyph {
   const s = hash32(`${id}:${cycle}:${index}:${ch}`);
   const u = (s % 10000) / 10000;
@@ -660,128 +544,21 @@ function glyphLook(
   const w = ((s >>> 16) % 10000) / 10000;
   const q = ((s >>> 20) % 10000) / 10000;
   const jitter = RECALL.offsetJitter;
-  const huge = size >= RECALL.sizes.huge;
   return {
     ch,
     face: frag.face,
-    size: size * (0.98 + u * 0.03),
-    sx: huge ? 0.9 + u * 0.04 : 0.94 + u * 0.05,
-    sy: 1 + v * 0.03,
-    dy: (v - 0.5) * 0.04,
-    track: frag.track + (w - 0.5) * 0.02,
-    weight: Math.min(500, Math.max(400, frag.weight + (u < 0.22 ? 50 : u > 0.82 ? -50 : 0))),
-    ink: glyphInk(frag, index, ch),
-    boxed,
+    size: frag.size * (0.94 + u * 0.1),
+    sx: 0.86 + u * 0.28,
+    sy: 0.94 + v * 0.12,
+    dy: (v - 0.5) * 0.14,
+    track: frag.track + (w - 0.5) * 0.07,
+    weight: Math.min(600, Math.max(400, frag.weight + (u < 0.3 ? 50 : u > 0.78 ? -50 : 0))),
     pinkDx: RECALL.pinkDx + (u - 0.5) * jitter,
     pinkDy: RECALL.pinkDy + (v - 0.5) * jitter,
     greenDx: RECALL.greenDx + (w - 0.5) * jitter,
     greenDy: RECALL.greenDy + (q - 0.5) * jitter,
     bloom: RECALL.bloom + (q - 0.5) * RECALL.bloomJitter,
     seed: s,
-    ghost: false,
-    fade: 1,
-    soft: 0.5,
-  };
-}
-
-function charBornAt(frames: CompiledFrame[], cycle: number, index: number) {
-  for (const frame of frames) {
-    if (frame.cycle === cycle && index >= frame.a && index < frame.b) {
-      return frame.at;
-    }
-  }
-  return 0;
-}
-
-function collectHides(id: string, frames: CompiledFrame[]): HideEvent[] {
-  const hides: HideEvent[] = [];
-  for (let i = 0; i < frames.length; i += 1) {
-    const frame = frames[i];
-    const next = frames[i + 1];
-    const hideAt = next ? next.at : frame.until;
-    for (let index = frame.a; index < frame.b; index += 1) {
-      const stays =
-        Boolean(next) &&
-        next.cycle === frame.cycle &&
-        index >= next.a &&
-        index < next.b;
-      if (stays) {
-        continue;
-      }
-      hides.push({
-        index,
-        at: hideAt,
-        cycle: frame.cycle,
-        persist: retroGhostMs(id, frame.cycle, index, hideAt),
-      });
-    }
-  }
-  return hides;
-}
-
-function caretIndex(frag: CompiledFrag, frame: CompiledFrame | null, prev: CompiledFrame | null) {
-  if (!frame) {
-    const last = frag.frames[frag.frames.length - 1];
-    return frag.delDir === "ltr" ? last?.a ?? 0 : last?.b ?? frag.text.length;
-  }
-  const writing = Boolean(
-    prev && (frame.b > prev.b || frame.a < prev.a),
-  );
-  const deleting = Boolean(
-    prev && (frame.b < prev.b || frame.a > prev.a),
-  );
-  if (writing || !prev) {
-    return frag.typeDir === "ltr" ? frame.b : frame.a;
-  }
-  if (deleting) {
-    return frag.delDir === "ltr" ? frame.a : frame.b;
-  }
-  return frag.typeDir === "ltr" ? frame.b : frame.a;
-}
-
-function markWindow(
-  frag: RecallFrag,
-  text: string,
-  frames: CompiledFrame[],
-): {at: number; until: number} {
-  if (!frag.mark || !frames.length) {
-    if (frag.mark === "before") {
-      const at = Math.max(0, frag.start - (frag.markLead ?? 180));
-      return {at, until: Math.min(RECALL.durationMs, frag.start + 360)};
-    }
-    return {at: 0, until: 0};
-  }
-  const len = text.length;
-  let fullAt: number | null = null;
-  let lastFullUntil: number | null = null;
-  for (const frame of frames) {
-    if (frame.b - frame.a === len) {
-      if (fullAt === null) {
-        fullAt = frame.at;
-      }
-      lastFullUntil = frame.until;
-    }
-  }
-  const firstAt = frames[0].at;
-  const lastUntil = frames[frames.length - 1].until;
-  if (frag.mark === "before") {
-    return {
-      at: Math.max(0, frag.start - (frag.markLead ?? 180)),
-      until: Math.max(firstAt + 80, (lastFullUntil ?? lastUntil) - (frag.markExit ?? 140)),
-    };
-  }
-  const start = (fullAt ?? firstAt) + (frag.markDelay ?? 160);
-  const end = (lastFullUntil ?? lastUntil) - (frag.markExit ?? 160);
-  if (end <= start) {
-    return {at: start, until: Math.min(RECALL.durationMs, start + 220)};
-  }
-  return {at: start, until: end};
-}
-
-function markBox(text: string, size: number, track: number) {
-  return {
-    markW: Math.max(size, text.length * size * (0.48 + Math.max(0, track) * 0.4)),
-    markH: size * 1.04,
   };
 }
 
@@ -838,6 +615,9 @@ export function resolveRecallText(frag: RecallFrag, pool: RecallPool) {
   if (frag.from === "title" && text.length > 12) {
     text = text.split(/\s+/)[0] ?? text.slice(0, 12);
   }
+  if (frag.from === "category" && text.length > 8) {
+    text = text.split(/\s+/)[0] ?? text.slice(0, 8);
+  }
   if (frag.maxChars && text.length > frag.maxChars) {
     text = text.slice(0, frag.maxChars);
   }
@@ -845,7 +625,9 @@ export function resolveRecallText(frag: RecallFrag, pool: RecallPool) {
 }
 
 function compileFrag(frag: RecallFrag, text: string): CompiledFrag {
-  const {type, del, anchor} = motionDirs(frag.motion);
+  const dirs = motionDirs(frag.motion);
+  const {type, del} = dirs;
+  const anchor = frag.anchor ?? dirs.anchor;
   const len = text.length;
   let [a, b] = emptyRange(len, type);
   let t = frag.start;
@@ -868,9 +650,6 @@ function compileFrag(frag: RecallFrag, text: string): CompiledFrag {
     const step = frag.play[opIndex];
     if (step.op === "hold") {
       t += step.ms;
-      if (frames.length) {
-        frames[frames.length - 1].until = t;
-      }
       continue;
     }
 
@@ -883,8 +662,8 @@ function compileFrag(frag: RecallFrag, text: string): CompiledFrag {
             ? Math.min(len, Math.max(0, step.n))
             : Math.min(len, Math.max(0, step.n));
     const writing = step.op === "type" || step.op === "typeTo";
-    const writeMul = step.speed ?? frag.write ?? "mid";
-    const eraseMul = step.speed ?? frag.erase ?? "mid";
+    const writeSpeed = step.speed ?? frag.write ?? "mid";
+    const eraseSpeed = step.speed ?? frag.erase ?? "mid";
 
     if (writing) {
       cycle += 1;
@@ -894,7 +673,7 @@ function compileFrag(frag: RecallFrag, text: string): CompiledFrag {
     }
 
     let guard = 0;
-    while (visible() !== goal && guard < 48 && t < RECALL.durationMs) {
+    while (visible() !== goal && guard < 48) {
       guard += 1;
       if (writing) {
         if (visible() >= goal) {
@@ -907,7 +686,7 @@ function compileFrag(frag: RecallFrag, text: string): CompiledFrag {
           }
           const ch = text[b] ?? "";
           if (!first) {
-            t += stepMs("type", `${frag.id}:t:${opIndex}:${b}`, ch, writeMul);
+            t += stepMs("type", `${frag.id}:t:${opIndex}:${b}`, ch, writeSpeed);
           }
           b += 1;
         } else {
@@ -916,7 +695,7 @@ function compileFrag(frag: RecallFrag, text: string): CompiledFrag {
           }
           const ch = text[a - 1] ?? "";
           if (!first) {
-            t += stepMs("type", `${frag.id}:t:${opIndex}:${a}`, ch, writeMul);
+            t += stepMs("type", `${frag.id}:t:${opIndex}:${a}`, ch, writeSpeed);
           }
           a -= 1;
         }
@@ -931,14 +710,14 @@ function compileFrag(frag: RecallFrag, text: string): CompiledFrag {
           break;
         }
         const ch = text[a] ?? "";
-        t += stepMs("delete", `${frag.id}:d:${opIndex}:${a}`, ch, eraseMul);
+        t += stepMs("delete", `${frag.id}:d:${opIndex}:${a}`, ch, eraseSpeed);
         a += 1;
       } else {
         if (b <= a) {
           break;
         }
         const ch = text[b - 1] ?? "";
-        t += stepMs("delete", `${frag.id}:d:${opIndex}:${b}`, ch, eraseMul);
+        t += stepMs("delete", `${frag.id}:d:${opIndex}:${b}`, ch, eraseSpeed);
         b -= 1;
       }
       if (visible() > 0) {
@@ -951,19 +730,14 @@ function compileFrag(frag: RecallFrag, text: string): CompiledFrag {
 
   const endBy = Math.min(frag.endBy ?? RECALL.durationMs, RECALL.durationMs);
   if (frames.length) {
-    const last = frames[frames.length - 1];
-    last.until = Math.min(Math.max(last.until, t), endBy);
     for (const frame of frames) {
-      frame.at = Math.min(frame.at, endBy);
       frame.until = Math.min(frame.until, endBy);
+    }
+    while (frames.length && frames[frames.length - 1].at >= endBy) {
+      frames.pop();
     }
   }
 
-  const mark = markWindow(frag, text, frames);
-  const scale = frag.scale ?? (frag.size <= RECALL.sizes.small ? "meta" : "medium");
-  const track = retroTrackFor(frag.id, scale);
-  const step = retroUnit(`${frag.id}:step`) < RECALL_RETRO.stepChance;
-  const box = markBox(text, frag.size, track);
   return {
     id: frag.id,
     text,
@@ -971,31 +745,10 @@ function compileFrag(frag: RecallFrag, text: string): CompiledFrag {
     face: frag.face,
     size: frag.size,
     weight: frag.weight,
-    track,
+    track: frag.track,
     opacity: frag.opacity,
     anchor,
-    ink: frag.ink ?? "pale",
-    inkMark: frag.inkMark,
-    scale,
-    yearVh: frag.yearVh ?? RECALL.yearVh,
-    soloGrow: Boolean(frag.soloGrow),
-    typeDir: type,
-    delDir: del,
-    step,
-    wantCursor: retroUnit(`${frag.id}:cur`) < RECALL_RETRO.cursorChance,
-    cursorRank: retroUnit(`${frag.id}:crank`),
-    extraBlinks: retroExtraBlinks(frag.id),
-    snapIndex:
-      !step &&
-      text.length > 1 &&
-      retroUnit(`${frag.id}:hassnap`) < RECALL_RETRO.snapLetterChance
-        ? Math.floor(retroUnit(`${frag.id}:snapch`) * text.length)
-        : -1,
-    hides: collectHides(frag.id, frames),
-    markAt: mark.at,
-    markUntil: mark.until,
-    markW: box.markW,
-    markH: box.markH,
+    fitMaxVw: frag.fitMaxVw,
     frames,
   };
 }
@@ -1010,6 +763,53 @@ function compiledFor(pool: RecallPool) {
   const next = RECALL_FRAGS.map((frag) => compileFrag(frag, resolveRecallText(frag, pool)));
   compiledCache.set(pool, next);
   return next;
+}
+
+const fitCache = new Map<string, {vw: number; fitted: number}>();
+
+function measureRecallWidth(text: string, size: number, track: number, face: RecallFace) {
+  const fallback = text.length * size * (face === "raster" ? 0.48 : 0.56) + Math.max(0, text.length - 1) * track * size;
+  if (typeof document === "undefined") {
+    return fallback;
+  }
+  const host = document.querySelector(".crt-transit");
+  const cs = host ? getComputedStyle(host) : getComputedStyle(document.documentElement);
+  const cond = cs.getPropertyValue("--font-recall-cond").trim();
+  const osw = cs.getPropertyValue("--font-recall-osw").trim();
+  const stack =
+    face === "display"
+      ? osw || "Oswald, Impact, sans-serif"
+      : cond || `"Barlow Condensed", "Arial Narrow", sans-serif`;
+  const ctx = document.createElement("canvas").getContext("2d");
+  if (!ctx) {
+    return fallback;
+  }
+  ctx.font = `${face === "display" ? 500 : 600} ${size}px ${stack}`;
+  let width = 0;
+  for (let i = 0; i < text.length; i += 1) {
+    width += ctx.measureText(text[i] ?? "").width;
+    if (i < text.length - 1) {
+      width += track * size;
+    }
+  }
+  return width;
+}
+
+function fitRecallSize(frag: CompiledFrag, text: string) {
+  if (!frag.fitMaxVw || typeof window === "undefined") {
+    return frag.size;
+  }
+  const vw = window.innerWidth;
+  const key = `${frag.id}:${text}:${frag.size}:${frag.track}:${frag.fitMaxVw}`;
+  const hit = fitCache.get(key);
+  if (hit && hit.vw === vw) {
+    return hit.fitted;
+  }
+  const maxW = vw * (frag.fitMaxVw / 100);
+  const width = measureRecallWidth(text, frag.size, frag.track, frag.face);
+  const fitted = width <= maxW || width <= 1 ? frag.size : frag.size * (maxW / width);
+  fitCache.set(key, {vw, fitted});
+  return fitted;
 }
 
 function frameAt(frames: CompiledFrame[], ms: number) {
@@ -1028,108 +828,79 @@ export function resolveRecall(ms: number, pool: RecallPool): RecallView[] {
   if (ms < 0 || ms >= RECALL.durationMs) {
     return [];
   }
-  const compiled = compiledFor(pool);
-  const drafts: RecallView[] = [];
-  const cursorIds: {id: string; rank: number}[] = [];
-  for (const frag of compiled) {
+  const views: RecallView[] = [];
+  for (const frag of compiledFor(pool)) {
     const frame = frameAt(frag.frames, ms);
-    const frameIdx = frame ? frag.frames.indexOf(frame) : -1;
-    const prev = frameIdx > 0 ? frag.frames[frameIdx - 1] : null;
-    const marked = frag.markUntil > frag.markAt && ms >= frag.markAt && ms < frag.markUntil;
-    const live = Boolean(frame && ms < frame.until && frame.b > frame.a);
-    const liveA = live && frame ? frame.a : 0;
-    const liveB = live && frame ? frame.b : 0;
-    const slice = live && frame ? frag.text.slice(liveA, liveB) : "";
-    const ghosts: RecallGhost[] = [];
-    const sizeHint = resolveFragSize(
-      frag,
-      slice.length || 1,
-      sawFullWord(frag, frame?.cycle ?? 0, ms),
-    );
-    for (const hide of frag.hides) {
-      if (ms < hide.at || ms >= hide.at + hide.persist) {
-        continue;
-      }
-      const look = retroGhostLook(ms - hide.at, hide.persist, frag.step, frag.id);
-      if (look.opacity <= 0.01) {
-        continue;
-      }
-      const ch = frag.text[hide.index] ?? "";
-      const glyph = glyphLook(frag.id, hide.cycle, hide.index, ch, frag, sizeHint, false);
-      ghosts.push({
-        index: hide.index,
-        glyph: {...glyph, ghost: true, fade: look.opacity, soft: look.blur},
-        opacity: look.opacity,
-        blur: look.blur,
-      });
-    }
-    const last = frag.frames[frag.frames.length - 1];
-    const extraMs = frag.extraBlinks * RECALL_RETRO.cursorPeriod * 2;
-    const inCursor =
-      frag.wantCursor &&
-      ((live && Boolean(frame)) || Boolean(last && ms >= last.until && ms < last.until + extraMs));
-    if (!live && !marked && !ghosts.length && !inCursor) {
+    if (!frame || ms >= frame.until || frame.b <= frame.a) {
       continue;
     }
-    const markAlpha = retroMarkAlpha(ms, frag.markAt, frag.markUntil, frag.step, frag.id);
-    const spot = RECALL_SPOTS[frag.spot];
-    const jitter = spotJitter(frag.id);
-    const size = resolveFragSize(frag, slice.length, sawFullWord(frag, frame?.cycle ?? 0, ms));
-    const box = markBox(frag.text, size, frag.track);
-    const cursor = inCursor
-      ? {index: caretIndex(frag, live ? frame : last ?? null, prev), on: retroCursorOn(ms)}
-      : null;
-    if (cursor) {
-      cursorIds.push({id: frag.id, rank: frag.cursorRank});
+    const slice = frag.text.slice(frame.a, frame.b);
+    if (!slice) {
+      continue;
     }
-    drafts.push({
+    const spot = RECALL_SPOTS[frag.spot];
+    const size = fitRecallSize(frag, frag.text);
+    const look = size === frag.size ? frag : {...frag, size};
+    views.push({
       id: frag.id,
-      key: `${frag.id}-${frame?.cycle ?? 0}-${liveA}-${liveB}-${marked ? "m" : "x"}-${size}-${ghosts.length}`,
+      key: `${frag.id}-${frame.cycle}-${frame.a}-${frame.b}-${size.toFixed(1)}`,
       text: slice,
-      glyphs: slice
-        ? Array.from(slice, (ch, i) => {
-            const index = liveA + i;
-            const glyph = glyphLook(
-              frag.id,
-              frame?.cycle ?? 0,
-              index,
-              ch,
-              frag,
-              size,
-              markAlpha > 0.5,
-            );
-            const snap = frag.step || index === frag.snapIndex;
-            const born = charBornAt(frag.frames, frame?.cycle ?? 0, index);
-            const look = retroAppearLook(ms - born, retroAppearMs(frag.id, index), snap);
-            return {...glyph, fade: look.fade, soft: Math.round(look.soft * 4) / 4};
-          })
-        : [],
-      ghosts,
-      liveA,
-      liveB,
-      textLen: frag.text.length,
-      step: frag.step,
-      cursor,
-      markAlpha,
+      glyphs: Array.from(slice, (ch, i) =>
+        glyphLook(frag.id, frame.cycle, frame.a + i, ch, look),
+      ),
       anchor: frag.anchor,
-      x: spot.x + jitter.x,
-      y: spot.y + jitter.y,
+      x: spot.x,
+      y: spot.y,
       size,
       weight: frag.weight,
       track: frag.track,
       opacity: frag.opacity,
       trace: false,
-      mark: markAlpha > 0.04,
-      markW: box.markW,
-      markH: box.markH,
+      caret: frag.id === "play" && slice === frag.text,
     });
   }
-  cursorIds.sort((a, b) => a.rank - b.rank);
-  const keep = new Set(cursorIds.slice(0, RECALL_RETRO.cursorMax).map((item) => item.id));
-  for (const view of drafts) {
-    if (view.cursor && !keep.has(view.id)) {
-      view.cursor = null;
-    }
+  return views;
+}
+
+export function resolvePlaybackTrace(fade: number): RecallView[] {
+  if (fade <= 0.02) {
+    return [];
   }
-  return drafts;
+  const src = RECALL_FRAGS.find((frag) => frag.id === "play");
+  if (!src) {
+    return [];
+  }
+  const text = RECALL_PLAYBACK;
+  const compiled: CompiledFrag = {
+    id: src.id,
+    text,
+    spot: src.spot,
+    face: src.face,
+    size: src.size,
+    weight: src.weight,
+    track: src.track,
+    opacity: src.opacity,
+    anchor: src.anchor ?? "right",
+    fitMaxVw: src.fitMaxVw,
+    frames: [],
+  };
+  const size = fitRecallSize(compiled, text);
+  const look = size === compiled.size ? compiled : {...compiled, size};
+  return [
+    {
+      id: src.id,
+      key: `play-trace-${size.toFixed(1)}`,
+      text,
+      glyphs: Array.from(text, (ch, i) => glyphLook(src.id, 0, i, ch, look)),
+      anchor: compiled.anchor,
+      x: RECALL_SPOTS[src.spot].x,
+      y: RECALL_SPOTS[src.spot].y,
+      size,
+      weight: src.weight,
+      track: src.track,
+      opacity: src.opacity * 0.36 * fade,
+      trace: true,
+      caret: false,
+    },
+  ];
 }
