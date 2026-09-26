@@ -122,7 +122,7 @@ function stopTrailer(id: string, el?: HTMLVideoElement) {
 export function cueArchiveVideo(
   id: string,
   el: HTMLVideoElement,
-  cueAt = ARCHIVE.videoCueAt,
+  cueAt: number = ARCHIVE.videoCueAt,
 ) {
   if (!el.src) {
     return;

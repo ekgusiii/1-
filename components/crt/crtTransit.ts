@@ -127,8 +127,8 @@ function idleGlyph(ch: string): GlyphFx {
 
 export function sampleColor(u: number): ColorGrade {
   const t = clamp01(u);
-  let prev = COLOR_KEYS[0];
-  let next = COLOR_KEYS[COLOR_KEYS.length - 1];
+  let prev: (typeof COLOR_KEYS)[number] = COLOR_KEYS[0];
+  let next: (typeof COLOR_KEYS)[number] = COLOR_KEYS[COLOR_KEYS.length - 1];
   for (let i = 0; i < COLOR_KEYS.length - 1; i += 1) {
     if (t >= COLOR_KEYS[i].u && t <= COLOR_KEYS[i + 1].u) {
       prev = COLOR_KEYS[i];

@@ -782,7 +782,7 @@ export function ArchiveDesktop({projects, openSlug}: ArchiveDesktopProps) {
       speed: 0,
       t: 0,
     };
-    const onMove = (event: PointerEvent) => {
+    const onMove = (event: globalThis.PointerEvent) => {
       const now = performance.now();
       const prev = pointerRef.current;
       const dt = Math.max(8, now - (prev.t || now));
