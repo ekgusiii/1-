@@ -1,7 +1,55 @@
+import {playPageTransitionGraph} from "@/lib/sound/pageTransitionSound";
 import {bindSoundEngine, type EnterCue, type GhostTick, type MotionFrame} from "@/lib/sound/soundBus";
 
 const VOICE_F = [220, 329.6, 440] as const;
 const VOICE_PAN = [-0.45, 0, 0.45] as const;
+const RADIO_STATIC_URL = "/sounds/airplane-cabin-loop.wav";
+const RADIO_STATIC_GAIN = 0.15;
+const MUFFLED_URL = "/sounds/airplane-muffled.mp3";
+const MUFFLED_GAIN = 0.15;
+const WINDOW_FADE_SEC = 0.15;
+
+let radioStaticData: Promise<ArrayBuffer> | null = null;
+
+function loadRadioStatic() {
+  if (typeof window === "undefined") {
+    return Promise.resolve(new ArrayBuffer(0));
+  }
+  if (!radioStaticData) {
+    radioStaticData = fetch(RADIO_STATIC_URL).then((response) => {
+      if (!response.ok) {
+        throw new Error(`radio static ${response.status}`);
+      }
+      return response.arrayBuffer();
+    });
+  }
+  return radioStaticData;
+}
+
+if (typeof window !== "undefined") {
+  loadRadioStatic();
+}
+
+let muffledData: Promise<ArrayBuffer> | null = null;
+
+function loadMuffled() {
+  if (typeof window === "undefined") {
+    return Promise.resolve(new ArrayBuffer(0));
+  }
+  if (!muffledData) {
+    muffledData = fetch(MUFFLED_URL).then((response) => {
+      if (!response.ok) {
+        throw new Error(`muffled cabin ${response.status}`);
+      }
+      return response.arrayBuffer();
+    });
+  }
+  return muffledData;
+}
+
+if (typeof window !== "undefined") {
+  loadMuffled();
+}
 
 function ramp(param: AudioParam, value: number, tau: number, ctx: AudioContext) {
   const t = ctx.currentTime;
@@ -78,6 +126,20 @@ export class SoundEngine {
   private hissGain: GainNode | null = null;
   private hissFilter: BiquadFilterNode | null = null;
   private humGain: GainNode | null = null;
+  private mainBed: GainNode | null = null;
+  private archiveBed: GainNode | null = null;
+  private radioBuffer: AudioBuffer | null = null;
+  private radioStatic: AudioBufferSourceNode | null = null;
+  private radioGain: GainNode | null = null;
+  private cabinFilter: BiquadFilterNode | null = null;
+  private muffledBuffer: AudioBuffer | null = null;
+  private muffled: AudioBufferSourceNode | null = null;
+  private muffledGain: GainNode | null = null;
+  private muffledToken = 0;
+  private muffleWanted = false;
+  private windowPhase: "bed" | "muffle" | "picture" = "bed";
+  private onHearMute: ((muted: boolean) => void) | null = null;
+  private ambient: "main" | "archive" = "main";
   private whistle: OscillatorNode | null = null;
   private whistleGain: GainNode | null = null;
   private voices: Voice[] = [];
@@ -143,6 +205,19 @@ export class SoundEngine {
     wet.connect(masterPan);
     masterPan.connect(compressor);
 
+    const onArchive = document.body.classList.contains("is-archive");
+    const mainBed = ctx.createGain();
+    const archiveBed = ctx.createGain();
+    mainBed.gain.value = onArchive ? 0 : 1;
+    archiveBed.gain.value = onArchive ? 1 : 0;
+    mainBed.connect(bus);
+    const cabinFilter = ctx.createBiquadFilter();
+    cabinFilter.type = "lowpass";
+    cabinFilter.frequency.value = 20000;
+    cabinFilter.Q.value = 0.7;
+    cabinFilter.connect(archiveBed);
+    archiveBed.connect(bus);
+
     const brown = ctx.createBufferSource();
     brown.buffer = makeNoise(ctx, 2.4, "brown");
     brown.loop = true;
@@ -154,12 +229,12 @@ export class SoundEngine {
     brownGain.gain.value = 0.035;
     brown.connect(brownFilter);
     brownFilter.connect(brownGain);
-    brownGain.connect(bus);
+    brownGain.connect(mainBed);
     brown.start();
 
     const humGain = ctx.createGain();
     humGain.gain.value = 1;
-    humGain.connect(bus);
+    humGain.connect(mainBed);
     [
       [60, 0.01],
       [120, 0.005],
@@ -179,7 +254,7 @@ export class SoundEngine {
     moireFilter.type = "lowpass";
     moireFilter.frequency.value = 380;
     moireFilter.Q.value = 0.7;
-    moireFilter.connect(bus);
+    moireFilter.connect(mainBed);
 
     const voices: Voice[] = VOICE_F.map((base, index) => {
       const gain = ctx.createGain();
@@ -243,8 +318,11 @@ export class SoundEngine {
     hissGain.gain.value = 0;
     hiss.connect(hissFilter);
     hissFilter.connect(hissGain);
-    hissGain.connect(bus);
+    hissGain.connect(mainBed);
     hiss.start();
+
+    void this.prepareRadioStatic(ctx);
+    void this.prepareMuffled(ctx);
 
     const whistle = ctx.createOscillator();
     whistle.type = "sine";
@@ -268,6 +346,10 @@ export class SoundEngine {
     this.hissGain = hissGain;
     this.hissFilter = hissFilter;
     this.humGain = humGain;
+    this.mainBed = mainBed;
+    this.archiveBed = archiveBed;
+    this.cabinFilter = cabinFilter;
+    this.ambient = onArchive ? "archive" : "main";
     this.whistle = whistle;
     this.whistleGain = whistleGain;
     this.voices = voices;
@@ -282,8 +364,237 @@ export class SoundEngine {
     this.playPowerOn();
   }
 
+  private async prepareRadioStatic(ctx: AudioContext) {
+    try {
+      const raw = await loadRadioStatic();
+      if (this.ctx !== ctx || this.radioBuffer || raw.byteLength < 16) {
+        return;
+      }
+      const buffer = await ctx.decodeAudioData(raw.slice(0));
+      if (this.ctx !== ctx || this.radioBuffer) {
+        return;
+      }
+      this.radioBuffer = buffer;
+      if (this.ambient === "archive" && this.windowPhase === "bed") {
+        this.startRadioStatic();
+      }
+    } catch {
+      this.radioBuffer = null;
+    }
+  }
+
+  private startRadioStatic() {
+    if (!this.ctx || !this.archiveBed || !this.radioBuffer || this.radioStatic) {
+      return;
+    }
+    const source = this.ctx.createBufferSource();
+    source.buffer = this.radioBuffer;
+    source.loop = true;
+    const gain = this.ctx.createGain();
+    gain.gain.value = RADIO_STATIC_GAIN;
+    source.connect(gain);
+    gain.connect(this.cabinFilter ?? this.archiveBed);
+    source.start();
+    this.radioStatic = source;
+    this.radioGain = gain;
+    if (this.cabinFilter) {
+      const open = this.ctx.currentTime;
+      this.cabinFilter.frequency.cancelScheduledValues(open);
+      this.cabinFilter.frequency.setValueAtTime(20000, open);
+    }
+    const now = this.ctx.currentTime;
+    this.archiveBed.gain.cancelScheduledValues(now);
+    this.archiveBed.gain.setValueAtTime(1, now);
+  }
+
+  private stopRadioStatic() {
+    const source = this.radioStatic;
+    this.radioStatic = null;
+    const gain = this.radioGain;
+    this.radioGain = null;
+    if (source) {
+      try {
+        source.stop();
+      } catch {
+        /* already stopped */
+      }
+      source.disconnect();
+    }
+    gain?.disconnect();
+    if (this.archiveBed && this.ctx) {
+      const now = this.ctx.currentTime;
+      this.archiveBed.gain.cancelScheduledValues(now);
+      this.archiveBed.gain.setValueAtTime(0, now);
+    }
+  }
+
+  private async prepareMuffled(ctx: AudioContext) {
+    try {
+      const raw = await loadMuffled();
+      if (this.ctx !== ctx || this.muffledBuffer || raw.byteLength < 16) {
+        return;
+      }
+      const buffer = await ctx.decodeAudioData(raw.slice(0));
+      if (this.ctx !== ctx || this.muffledBuffer) {
+        return;
+      }
+      this.muffledBuffer = buffer;
+      if (this.muffleWanted && this.windowPhase !== "bed") {
+        this.startMuffled(0);
+      }
+    } catch {
+      this.muffledBuffer = null;
+    }
+  }
+
+  private startMuffled(fadeSec: number) {
+    this.muffleWanted = true;
+    if (!this.ctx || !this.bus || !this.muffledBuffer) {
+      return;
+    }
+    this.muffleWanted = false;
+    if (this.muffled && this.muffledGain) {
+      this.muffledToken += 1;
+      const now = this.ctx.currentTime;
+      const current = this.muffledGain.gain.value;
+      this.muffledGain.gain.cancelScheduledValues(now);
+      this.muffledGain.gain.setValueAtTime(Math.max(0.0001, current), now);
+      if (fadeSec > 0 && current < MUFFLED_GAIN * 0.9) {
+        this.muffledGain.gain.linearRampToValueAtTime(MUFFLED_GAIN, now + fadeSec);
+      } else {
+        this.muffledGain.gain.setValueAtTime(MUFFLED_GAIN, now);
+      }
+      return;
+    }
+    const source = this.ctx.createBufferSource();
+    source.buffer = this.muffledBuffer;
+    source.loop = true;
+    const gain = this.ctx.createGain();
+    const now = this.ctx.currentTime;
+    gain.gain.setValueAtTime(fadeSec > 0 ? 0.0001 : MUFFLED_GAIN, now);
+    if (fadeSec > 0) {
+      gain.gain.linearRampToValueAtTime(MUFFLED_GAIN, now + fadeSec);
+    }
+    source.connect(gain);
+    gain.connect(this.bus);
+    source.start();
+    this.muffled = source;
+    this.muffledGain = gain;
+  }
+
+  private stopMuffled(fadeSec: number) {
+    const source = this.muffled;
+    const gain = this.muffledGain;
+    this.muffleWanted = false;
+    if (!source || !gain || !this.ctx) {
+      this.muffled = null;
+      this.muffledGain = null;
+      return;
+    }
+    const token = ++this.muffledToken;
+    if (fadeSec <= 0) {
+      this.muffled = null;
+      this.muffledGain = null;
+      try {
+        source.stop();
+      } catch {
+        /* already stopped */
+      }
+      source.disconnect();
+      gain.disconnect();
+      return;
+    }
+    const now = this.ctx.currentTime;
+    gain.gain.cancelScheduledValues(now);
+    gain.gain.setValueAtTime(Math.max(0.0001, gain.gain.value), now);
+    gain.gain.linearRampToValueAtTime(0.0001, now + fadeSec);
+    window.setTimeout(() => {
+      if (token !== this.muffledToken || this.muffled !== source) {
+        return;
+      }
+      this.muffled = null;
+      this.muffledGain = null;
+      try {
+        source.stop();
+      } catch {
+        /* already stopped */
+      }
+      source.disconnect();
+      gain.disconnect();
+    }, Math.round(fadeSec * 1000) + 40);
+  }
+
+  setAmbient(mode: "main" | "archive") {
+    if (!this.ctx || !this.mainBed || !this.archiveBed || !this.started) {
+      return;
+    }
+    if (mode === this.ambient) {
+      return;
+    }
+    this.ambient = mode;
+    if (mode === "archive") {
+      this.fadeBed(this.mainBed, 0, 0.1);
+      if (this.windowPhase === "bed") {
+        this.startRadioStatic();
+      }
+      return;
+    }
+    this.stopMuffled(0);
+    this.windowPhase = "bed";
+    this.stopRadioStatic();
+    this.fadeBed(this.mainBed, 1, 0.1);
+  }
+
+  beginWindowExpand() {
+    if (!this.started) {
+      return;
+    }
+    this.windowPhase = "muffle";
+    this.stopRadioStatic();
+    this.startMuffled(0);
+  }
+
+  finishWindowExpand() {
+    if (this.windowPhase === "bed") {
+      return;
+    }
+    this.windowPhase = "picture";
+    this.stopMuffled(WINDOW_FADE_SEC);
+  }
+
+  beginWindowShrink() {
+    if (!this.started || this.windowPhase === "bed") {
+      return;
+    }
+    this.windowPhase = "muffle";
+    this.startMuffled(WINDOW_FADE_SEC);
+  }
+
+  finishWindowShrink() {
+    this.stopMuffled(0);
+    this.windowPhase = "bed";
+    if (this.ambient === "archive") {
+      this.startRadioStatic();
+    }
+  }
+
+  private fadeBed(node: GainNode, value: number, seconds: number) {
+    if (!this.ctx) {
+      return;
+    }
+    const t = this.ctx.currentTime;
+    node.gain.cancelScheduledValues(t);
+    node.gain.setValueAtTime(node.gain.value, t);
+    node.gain.linearRampToValueAtTime(value, t + seconds);
+  }
+
+  bindHearMute(fn: (muted: boolean) => void) {
+    this.onHearMute = fn;
+  }
+
   setMuted(muted: boolean) {
     this.muted = muted;
+    this.onHearMute?.(muted);
     if (!this.ctx || !this.master) {
       return;
     }
@@ -436,6 +747,23 @@ export class SoundEngine {
       ramp(this.wet.gain, 0.1, 0.7, this.ctx);
       ramp(this.dry.gain, 0.965, 0.7, this.ctx);
     }
+  }
+
+  cueOutput() {
+    if (!this.ctx || !this.bus || !this.started || this.muted) {
+      return null;
+    }
+    return {ctx: this.ctx, destination: this.bus};
+  }
+
+  playPageTransition(frequency: number) {
+    if (!this.ctx || !this.bus || !this.started || this.muted) {
+      return;
+    }
+    if (!Number.isFinite(frequency) || frequency <= 0) {
+      return;
+    }
+    playPageTransitionGraph(this.ctx, this.bus, frequency);
   }
 
   private playPowerOn() {

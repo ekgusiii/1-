@@ -1,4 +1,5 @@
 import {ARCHIVE} from "@/components/archive/archiveConfig";
+import {SoundEngine} from "@/lib/sound/SoundEngine";
 
 export type VideoBind = {
   el: HTMLVideoElement;
@@ -44,7 +45,7 @@ function paintFrame(el: HTMLVideoElement) {
 }
 
 function cutTrailer(state: Trailer, now: number) {
-  if (state.busy) {
+  if (state.busy || state.el.dataset.hear === "1") {
     return;
   }
   const el = state.el;
@@ -89,6 +90,13 @@ function cutTrailer(state: Trailer, now: number) {
 }
 
 function startTrailer(id: string, el: HTMLVideoElement, now: number) {
+  if (el.dataset.hear === "1") {
+    el.muted = SoundEngine.get().isMuted;
+    if (!el.muted && el.paused) {
+      el.play().catch(() => {});
+    }
+    return;
+  }
   const prev = trailers.get(id);
   if (prev?.el === el) {
     return;
@@ -106,6 +114,9 @@ function startTrailer(id: string, el: HTMLVideoElement, now: number) {
 }
 
 function stopTrailer(id: string, el?: HTMLVideoElement) {
+  if (el?.dataset.hear === "1") {
+    return;
+  }
   trailers.delete(id);
   if (!el) {
     return;
@@ -162,9 +173,65 @@ function rootId(id: string) {
   return id.replace(/-d-\d+$/, "");
 }
 
+const volumeFade = new WeakMap<HTMLVideoElement, number>();
+const heard = new Set<HTMLVideoElement>();
+
+export function setArchiveHearMuted(muted: boolean) {
+  for (const el of heard) {
+    el.muted = muted;
+    el.volume = muted ? 0 : 1;
+  }
+}
+
+function fadeVideoVolume(el: HTMLVideoElement, to: number, ms: number, done?: () => void) {
+  const token = (volumeFade.get(el) ?? 0) + 1;
+  volumeFade.set(el, token);
+  const from = el.volume;
+  const start = performance.now();
+  const step = (now: number) => {
+    if (volumeFade.get(el) !== token) {
+      return;
+    }
+    const t = ms <= 0 ? 1 : Math.min(1, (now - start) / ms);
+    const level = from + (to - from) * t;
+    el.volume = SoundEngine.get().isMuted ? 0 : level;
+    if (t < 1) {
+      window.requestAnimationFrame(step);
+      return;
+    }
+    done?.();
+  };
+  window.requestAnimationFrame(step);
+}
+
+export function claimArchiveVideo(el: HTMLVideoElement) {
+  el.dataset.hear = "1";
+  heard.add(el);
+  el.muted = SoundEngine.get().isMuted;
+  el.volume = 0;
+  el.play().catch(() => {});
+  fadeVideoVolume(el, 1, 150);
+}
+
+export function releaseArchiveAudio(el: HTMLVideoElement) {
+  if (el.dataset.hear !== "1") {
+    return;
+  }
+  fadeVideoVolume(el, 0, 150, () => {
+    el.pause();
+    el.muted = true;
+    el.volume = 0;
+    delete el.dataset.hear;
+    heard.delete(el);
+  });
+}
+
 export function holdArchiveVideo(el: HTMLVideoElement) {
-  el.pause();
   el.dataset.hold = "1";
+  if (el.dataset.hear === "1") {
+    return;
+  }
+  el.pause();
 }
 
 export function releaseArchiveVideo(el: HTMLVideoElement) {
@@ -183,12 +250,19 @@ export function driveVideos(
     }
     const key = rootId(id);
     const el = bind.el;
-    if (el.dataset.hold === "1") {
+    if (el.dataset.hold === "1" && el.dataset.hear !== "1") {
       el.pause();
       continue;
     }
     const preview = Boolean(previewId && key === previewId);
     if (preview) {
+      if (el.dataset.hear === "1") {
+        el.muted = SoundEngine.get().isMuted;
+        if (!el.muted && el.paused) {
+          el.play().catch(() => {});
+        }
+        continue;
+      }
       startTrailer(key, el, now);
       const state = trailers.get(key);
       if (state && now >= state.until) {

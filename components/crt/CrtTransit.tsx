@@ -4,6 +4,7 @@ import {useEffect, useMemo, useRef, type RefObject} from "react";
 import {Barlow_Condensed, Oswald} from "next/font/google";
 
 import {publishTransitShare} from "@/lib/moireShare";
+import {playKeystrokeSound, stopKeystrokeSound, warmTypewriter} from "@/lib/sound/typewriterSound";
 import {buildRecallPool} from "@/components/crt/crtRecall";
 import {clearRecallGlyphCache, rasterRecallGlyph} from "@/components/crt/crtRecallGlyph";
 import {
@@ -77,6 +78,8 @@ export function CrtTransit({
     let raf = 0;
     let finished = false;
     let skipAt: number | null = null;
+    const fragLen = new Map<string, number>();
+    warmTypewriter();
 
     publishTransitShare({
       timeScale: 0,
@@ -174,6 +177,40 @@ export function CrtTransit({
         }
       }
 
+      if (frame.stage === "frag") {
+        const live = new Set<string>();
+        for (const frag of frame.frags) {
+          if (frag.trace) {
+            continue;
+          }
+          live.add(frag.id);
+          const prev = fragLen.get(frag.id) ?? 0;
+          const next = frag.text.length;
+          fragLen.set(frag.id, next);
+          const added = next - prev;
+          if (added > 0) {
+            for (let i = 0; i < added; i += 1) {
+              playKeystrokeSound("reveal");
+            }
+          } else if (added < 0) {
+            for (let i = 0; i < -added; i += 1) {
+              playKeystrokeSound("dismiss");
+            }
+          }
+        }
+        for (const [id, prev] of fragLen) {
+          if (live.has(id)) {
+            continue;
+          }
+          fragLen.delete(id);
+          for (let i = 0; i < prev; i += 1) {
+            playKeystrokeSound("dismiss");
+          }
+        }
+      } else if (fragLen.size > 0) {
+        fragLen.clear();
+      }
+
       if (frame.done) {
         finished = true;
         applyGrade(exitRef.current, "", false);
@@ -204,6 +241,7 @@ export function CrtTransit({
       window.clearTimeout(arm);
       window.cancelAnimationFrame(raf);
       window.removeEventListener("click", onSkip);
+      stopKeystrokeSound();
       applyGrade(exitRef.current, "", false);
       publishTransitShare({
         timeScale: 1,

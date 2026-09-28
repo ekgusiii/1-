@@ -35,6 +35,8 @@ import {
 import { CrtTransit } from "@/components/crt/CrtTransit";
 import { MainFx } from "@/components/MainFx";
 import { readMoireShare, publishTransitShare } from "@/lib/moireShare";
+import { frequencyForPage } from "@/lib/sound/pageFrequencies";
+import { usePageTransitionSound } from "@/lib/sound/usePageTransitionSound";
 import { publishEnter } from "@/lib/sound/soundBus";
 import type { Project } from "@/sanity/lib/queries";
 
@@ -64,6 +66,9 @@ export function CrtScreen({ projects, routeSlug = null }: CrtScreenProps) {
   const exitRef = useRef<HTMLDivElement>(null);
   const fxRootRef = useRef<HTMLDivElement>(null);
   const nearestIdRef = useRef<string | null>(null);
+  const projectsRef = useRef(projects);
+  const playTransitionSound = usePageTransitionSound();
+  const playTransitionRef = useRef(playTransitionSound);
   const hotspotsRef = useRef<Hotspot[]>([]);
   const startLoopRef = useRef<() => void>(() => {});
   const modeRef = useRef<CrtMode>(routeSlug ? "archive" : "explore");
@@ -101,6 +106,8 @@ export function CrtScreen({ projects, routeSlug = null }: CrtScreenProps) {
     }));
   }, [mediaProjects]);
 
+  projectsRef.current = projects;
+  playTransitionRef.current = playTransitionSound;
   hotspotsRef.current = hotspots;
   modeRef.current = mode;
   hasProgramsRef.current = mediaProjects.length > 0;
@@ -293,6 +300,13 @@ export function CrtScreen({ projects, routeSlug = null }: CrtScreenProps) {
           setFreezeBounds(null);
           transitOnRef.current = true;
           setTransitOn(true);
+          const list = projectsRef.current;
+          const nearest = nearestIdRef.current;
+          const found = list.findIndex((project) => project._id === nearest);
+          const index = found >= 0 ? found : 0;
+          playTransitionRef.current(
+            frequencyForPage(list[index]?.slug, index),
+          );
         }
       }
 

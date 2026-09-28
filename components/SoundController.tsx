@@ -26,13 +26,24 @@ export function SoundController() {
 
   useEffect(() => {
     const onFirst = () => {
+      window.removeEventListener("pointerdown", onFirst, true);
+      window.removeEventListener("pointermove", onFirst, true);
       void tuneIn();
     };
-    window.addEventListener("pointerdown", onFirst, {once: true, capture: true});
+    window.addEventListener("pointerdown", onFirst, {capture: true});
+    window.addEventListener("pointermove", onFirst, {capture: true});
     return () => {
       window.removeEventListener("pointerdown", onFirst, true);
+      window.removeEventListener("pointermove", onFirst, true);
     };
   }, [tuneIn]);
+
+  useEffect(() => {
+    if (!started) {
+      return;
+    }
+    SoundEngine.get().setAmbient(archive ? "archive" : "main");
+  }, [archive, started]);
 
   useEffect(() => {
     const read = () => {

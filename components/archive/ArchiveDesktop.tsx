@@ -22,13 +22,19 @@ import {
   type TuneRank,
 } from "@/components/archive/archiveTune";
 import {
+  claimArchiveVideo,
   cueArchiveVideo,
   driveVideos,
   holdArchiveVideo,
+  releaseArchiveAudio,
   releaseArchiveVideo,
+  setArchiveHearMuted,
   type VideoBind,
 } from "@/components/archive/archiveVideos";
+import {SoundEngine} from "@/lib/sound/SoundEngine";
 import {decidePanelSide, InfoPanel, type InfoSide} from "@/components/archive/InfoPanel";
+import {frequencyForPage} from "@/lib/sound/pageFrequencies";
+import {usePageTransitionSound} from "@/lib/sound/usePageTransitionSound";
 import type {Project} from "@/sanity/lib/queries";
 
 type Rect = {x: number; y: number; w: number; h: number};
@@ -367,6 +373,7 @@ type ArchiveDesktopProps = {
 };
 
 export function ArchiveDesktop({projects, openSlug}: ArchiveDesktopProps) {
+  const playTransitionSound = usePageTransitionSound();
   const router = useRouter();
   const items = useMemo(() => buildArchiveItems(projects), [projects]);
   const [zMap, setZMap] = useState<Record<string, number>>({});
@@ -434,6 +441,12 @@ export function ArchiveDesktop({projects, openSlug}: ArchiveDesktopProps) {
   tunedRef.current = tuned;
   openRef.current = openSlug;
   stoodRef.current = stoodId;
+  const windowAudioRef = useRef<"bed" | "muffle" | "picture">("bed");
+  const heardWinRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    SoundEngine.get().bindHearMute(setArchiveHearMuted);
+  }, []);
 
   useEffect(() => {
     if (!stoodId) {
@@ -447,6 +460,76 @@ export function ArchiveDesktop({projects, openSlug}: ArchiveDesktopProps) {
     });
     return () => window.cancelAnimationFrame(frame);
   }, [stoodId]);
+
+  useEffect(() => {
+    if (openSlug || !stoodId || !standReady) {
+      return;
+    }
+    const engine = SoundEngine.get();
+    const id = stoodId;
+    const prev = heardWinRef.current;
+    if (prev && prev !== id) {
+      const prevEl = videosRef.current.get(prev)?.el;
+      if (prevEl) {
+        releaseArchiveAudio(prevEl);
+      }
+    }
+    heardWinRef.current = id;
+    if (windowAudioRef.current !== "muffle") {
+      engine.beginWindowExpand();
+      windowAudioRef.current = "muffle";
+    }
+    const timer = window.setTimeout(() => {
+      if (stoodRef.current !== id || openRef.current) {
+        return;
+      }
+      engine.finishWindowExpand();
+      windowAudioRef.current = "picture";
+      const el = videosRef.current.get(id)?.el;
+      if (el) {
+        claimArchiveVideo(el);
+      }
+    }, ARCHIVE.standMs);
+    return () => window.clearTimeout(timer);
+  }, [stoodId, standReady, openSlug]);
+
+  useEffect(() => {
+    if (openSlug) {
+      const el = heardWinRef.current
+        ? videosRef.current.get(heardWinRef.current)?.el
+        : undefined;
+      if (el) {
+        releaseArchiveAudio(el);
+      }
+      heardWinRef.current = null;
+      if (windowAudioRef.current !== "bed") {
+        SoundEngine.get().finishWindowShrink();
+        windowAudioRef.current = "bed";
+      }
+      return;
+    }
+    if (stoodId || windowAudioRef.current === "bed") {
+      return;
+    }
+    const el = heardWinRef.current
+      ? videosRef.current.get(heardWinRef.current)?.el
+      : undefined;
+    if (windowAudioRef.current === "picture" && el) {
+      releaseArchiveAudio(el);
+    }
+    heardWinRef.current = null;
+    SoundEngine.get().beginWindowShrink();
+    windowAudioRef.current = "muffle";
+    const wait = returningId ? ARCHIVE.autoLayMoveMs : ARCHIVE.layMs;
+    const timer = window.setTimeout(() => {
+      if (stoodRef.current || openRef.current) {
+        return;
+      }
+      SoundEngine.get().finishWindowShrink();
+      windowAudioRef.current = "bed";
+    }, wait);
+    return () => window.clearTimeout(timer);
+  }, [stoodId, openSlug, returningId]);
 
   const clearPanelTimers = () => {
     if (panelTimerRef.current) {
@@ -1053,6 +1136,11 @@ export function ArchiveDesktop({projects, openSlug}: ArchiveDesktopProps) {
       return {...prev, [item.id]: next};
     });
     setOpenId(item.id);
+    const index = Math.max(
+      0,
+      projects.findIndex((project) => project.slug === item.slug),
+    );
+    playTransitionSound(frequencyForPage(item.slug, index));
     router.push(`/work/${encodeURIComponent(item.slug)}`);
   };
 
