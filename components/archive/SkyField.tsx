@@ -3,6 +3,12 @@
 import {useEffect, useRef} from "react";
 
 import {ARCHIVE} from "@/components/archive/archiveConfig";
+import {
+  CLOUD_PERSP_MAX,
+  CLOUD_SPD_MAX,
+  publishCloudRise,
+  resetCloudRise,
+} from "@/lib/cloudRise";
 
 const VERT = `attribute vec2 aPos; void main(){ gl_Position = vec4(aPos,0.0,1.0); }`;
 
@@ -37,9 +43,9 @@ float fbm(vec2 p){
 void main(){
   vec2 uv = gl_FragCoord.xy / uRes;
   float y = uv.y;
-  float persp = mix(0.4, 2.4, y * y * (3.0 - 2.0 * y));
+  float persp = mix(0.4, ${CLOUD_PERSP_MAX.toFixed(1)}, y * y * (3.0 - 2.0 * y));
   vec2 p = vec2((uv.x - 0.5) * persp * 1.7, y * persp);
-  float spd = mix(0.1, 0.82, y * y);
+  float spd = mix(0.1, ${CLOUD_SPD_MAX.toFixed(2)}, y * y);
   p.y -= uTime * spd;
   float n = fbm(p * 2.8);
   float n2 = fbm(p * 5.4 + vec2(n, 2.0));
@@ -162,14 +168,17 @@ function paint2d(
 
 type SkyFieldProps = {
   lock: number;
+  rush?: number;
 };
 
-export function SkyField({lock}: SkyFieldProps) {
+export function SkyField({lock, rush = 0}: SkyFieldProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const hostRef = useRef<HTMLDivElement>(null);
   const bandRef = useRef<HTMLDivElement>(null);
   const lockRef = useRef(lock);
+  const rushRef = useRef(rush);
   lockRef.current = lock;
+  rushRef.current = rush;
 
   useEffect(() => {
     if (ARCHIVE.backgroundVideo) {
@@ -181,7 +190,11 @@ export function SkyField({lock}: SkyFieldProps) {
       return;
     }
     const start = performance.now();
+    resetCloudRise();
     let raf = 0;
+    let last = start;
+    let clock = 0;
+    let speed = 0;
     let nextBand = start + 1600;
     let bandY = 1.08;
     let banding = false;
@@ -227,7 +240,12 @@ export function SkyField({lock}: SkyFieldProps) {
     const tick = (now: number) => {
       raf = window.requestAnimationFrame(tick);
       const {w, h} = size();
-      const t = (now - start) / 1000;
+      const dt = Math.min(0.05, (now - last) / 1000);
+      last = now;
+      speed += (rushRef.current - speed) * Math.min(1, dt * 2.2);
+      clock += dt * (1 + speed * 6.5);
+      publishCloudRise(clock);
+      const t = clock;
       if (web) {
         const {gl, program, buf, uRes, uTime, uLock, uSat} = web;
         gl.viewport(0, 0, w, h);
@@ -248,6 +266,7 @@ export function SkyField({lock}: SkyFieldProps) {
     };
     raf = window.requestAnimationFrame(tick);
     return () => {
+      resetCloudRise();
       window.cancelAnimationFrame(raf);
       if (web) {
         web.gl.deleteBuffer(web.buf);

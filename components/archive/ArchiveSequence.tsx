@@ -1,6 +1,14 @@
 "use client";
 
-import {useEffect, useRef, useState, type ReactNode, type RefObject} from "react";
+import {
+  createContext,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+  type RefObject,
+} from "react";
 
 import {
   ARCHIVE,
@@ -18,8 +26,11 @@ import {
 import {ArchiveCrtFx} from "@/components/archive/ArchiveCrtFx";
 import {SkyField} from "@/components/archive/SkyField";
 import {CRTBase} from "@/components/CRTBase";
+import {recallRush, type RecallPhase} from "@/components/archive/archiveRecall";
 
 import "./archive.css";
+
+export const ArchiveRecallContext = createContext<(phase: RecallPhase) => void>(() => {});
 
 type Flash = {
   id: number;
@@ -32,6 +43,8 @@ type Flash = {
 type ArchiveSequenceProps = {
   fxRootRef: RefObject<HTMLDivElement | null>;
   onPhaseChange: (phase: ArchivePhase) => void;
+  onRecallStart?: () => void;
+  onRecallDone?: () => void;
   preset?: ArchivePhase;
   children?: ReactNode;
 };
@@ -70,6 +83,8 @@ function clearMoireCollapse(el: HTMLElement | null) {
 export function ArchiveSequence({
   fxRootRef,
   onPhaseChange,
+  onRecallStart,
+  onRecallDone,
   preset,
   children,
 }: ArchiveSequenceProps) {
@@ -84,6 +99,25 @@ export function ArchiveSequence({
   const [barrel, setBarrel] = useState(false);
   const [skyOn, setSkyOn] = useState(false);
   const [skyLock, setSkyLock] = useState(0);
+  const [recall, setRecall] = useState<RecallPhase>("idle");
+  const recallDoneRef = useRef(false);
+  const onRecallStartRef = useRef(onRecallStart);
+  const onRecallDoneRef = useRef(onRecallDone);
+  onRecallStartRef.current = onRecallStart;
+  onRecallDoneRef.current = onRecallDone;
+  const publishRecall = useCallback((next: RecallPhase) => {
+    setRecall(next);
+    if (next === "reveal") {
+      onRecallStartRef.current?.();
+    }
+  }, []);
+  const finishRecall = () => {
+    if (recallDoneRef.current) {
+      return;
+    }
+    recallDoneRef.current = true;
+    onRecallDoneRef.current?.();
+  };
   const phaseRef = useRef<ArchivePhase>("moire");
   const onPhaseChangeRef = useRef(onPhaseChange);
   onPhaseChangeRef.current = onPhaseChange;
@@ -272,10 +306,33 @@ export function ArchiveSequence({
     };
   }, [fxRootRef]);
 
+  useEffect(() => {
+    if (recall !== "reveal") {
+      return;
+    }
+    const id = window.setTimeout(() => {
+      if (recallDoneRef.current) {
+        return;
+      }
+      recallDoneRef.current = true;
+      onRecallDoneRef.current?.();
+    }, 1100);
+    return () => window.clearTimeout(id);
+  }, [recall]);
+
   const remnant = phase !== "moire";
 
   return (
-    <div className="arc-root" data-archive-phase={phase}>
+    <div
+      className="arc-root"
+      data-archive-phase={phase}
+      data-recall={recall}
+      onAnimationEnd={(event) => {
+        if (event.animationName === "arc-recall-welcome") {
+          finishRecall();
+        }
+      }}
+    >
       <svg className="epg__svgdefs" aria-hidden width="0" height="0">
         <filter
           id="arc-barrel"
@@ -312,7 +369,7 @@ export function ArchiveSequence({
           className="arc-stage"
           style={{transform: `translate3d(${shake.x}px, ${shake.y}px, 0)`}}
         >
-          {skyOn ? <SkyField lock={skyLock} /> : null}
+          {skyOn ? <SkyField lock={skyLock} rush={recallRush(recall)} /> : null}
 
           {ARCHIVE.signalCanvas && signalOn ? (
             <div className="arc-signal-host">
@@ -358,7 +415,9 @@ export function ArchiveSequence({
         </div>
       ) : null}
 
-      {children}
+      <ArchiveRecallContext.Provider value={publishRecall}>
+        {children}
+      </ArchiveRecallContext.Provider>
 
       {phase === "signal" || phase === "sky" ? <ArchiveCrtFx /> : null}
 

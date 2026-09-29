@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 
 import {
   clamp01,
@@ -48,6 +49,7 @@ type CrtScreenProps = {
 };
 
 export function CrtScreen({ projects, routeSlug = null }: CrtScreenProps) {
+  const router = useRouter();
   const glassRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const glRef = useRef<CrtMoireGl | null>(null);
@@ -482,6 +484,30 @@ export function CrtScreen({ projects, routeSlug = null }: CrtScreenProps) {
     }
   };
 
+  const prepareWelcome = () => {
+    enterRef.current = {...INITIAL_ENTER};
+    enterPhaseRef.current = INITIAL_ENTER.phase;
+    lastVisRef.current = enterVisuals(0, 0);
+    currentRef.current = {preview: 0, misalign: 1};
+    pointerRef.current = null;
+    modeRef.current = "explore";
+    setMode("explore");
+    setArchivePhase(null);
+    startLoopRef.current();
+  };
+
+  const finishRecall = () => {
+    archiveOnRef.current = false;
+    setArchiveOn(false);
+    if (window.location.pathname.startsWith("/work/")) {
+      router.replace("/");
+      return;
+    }
+    if (window.history.state?.crtView === "archive") {
+      window.history.replaceState({crtView: "welcome"}, "", window.location.href);
+    }
+  };
+
   const finishTransit = () => {
     transitOnRef.current = false;
     setTransitOn(false);
@@ -563,6 +589,8 @@ export function CrtScreen({ projects, routeSlug = null }: CrtScreenProps) {
         <ArchiveSequence
           fxRootRef={fxRootRef}
           onPhaseChange={handleArchivePhase}
+          onRecallStart={prepareWelcome}
+          onRecallDone={finishRecall}
           preset="signal"
         >
           {archivePhase === "signal" ? (

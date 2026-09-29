@@ -1,3 +1,4 @@
+import {CLOUD_RISE_SEC, readCloudRise, subscribeCloudRise} from "@/lib/cloudRise";
 import {playPageTransitionGraph} from "@/lib/sound/pageTransitionSound";
 import {bindSoundEngine, type EnterCue, type GhostTick, type MotionFrame} from "@/lib/sound/soundBus";
 
@@ -131,6 +132,8 @@ export class SoundEngine {
   private radioBuffer: AudioBuffer | null = null;
   private radioStatic: AudioBufferSourceNode | null = null;
   private radioGain: GainNode | null = null;
+  private radioFadeRaf = 0;
+  private radioFadeUnsub: (() => void) | null = null;
   private cabinFilter: BiquadFilterNode | null = null;
   private muffledBuffer: AudioBuffer | null = null;
   private muffled: AudioBufferSourceNode | null = null;
@@ -391,12 +394,13 @@ export class SoundEngine {
     source.buffer = this.radioBuffer;
     source.loop = true;
     const gain = this.ctx.createGain();
-    gain.gain.value = RADIO_STATIC_GAIN;
+    gain.gain.value = 0;
     source.connect(gain);
     gain.connect(this.cabinFilter ?? this.archiveBed);
     source.start();
     this.radioStatic = source;
     this.radioGain = gain;
+    this.fadeRadioIn(gain);
     if (this.cabinFilter) {
       const open = this.ctx.currentTime;
       this.cabinFilter.frequency.cancelScheduledValues(open);
@@ -407,7 +411,51 @@ export class SoundEngine {
     this.archiveBed.gain.setValueAtTime(1, now);
   }
 
+  private stopRadioFade() {
+    if (this.radioFadeRaf) {
+      cancelAnimationFrame(this.radioFadeRaf);
+      this.radioFadeRaf = 0;
+    }
+    this.radioFadeUnsub?.();
+    this.radioFadeUnsub = null;
+  }
+
+  private applyRadioRise(gain: GainNode, progress: number) {
+    if (this.radioGain !== gain) {
+      return;
+    }
+    const p = Math.min(1, Math.max(0, progress));
+    gain.gain.value = RADIO_STATIC_GAIN * p * p;
+  }
+
+  private fadeRadioIn(gain: GainNode) {
+    this.stopRadioFade();
+    gain.gain.value = 0;
+    if (readCloudRise() < 1) {
+      this.radioFadeUnsub = subscribeCloudRise((progress) => {
+        this.applyRadioRise(gain, progress);
+        if (progress >= 1) {
+          this.radioFadeUnsub?.();
+          this.radioFadeUnsub = null;
+        }
+      });
+      return;
+    }
+    const started = performance.now();
+    const step = () => {
+      const progress = Math.min(1, (performance.now() - started) / (CLOUD_RISE_SEC * 1000));
+      this.applyRadioRise(gain, progress);
+      if (progress < 1 && this.radioGain === gain) {
+        this.radioFadeRaf = requestAnimationFrame(step);
+      } else {
+        this.radioFadeRaf = 0;
+      }
+    };
+    this.radioFadeRaf = requestAnimationFrame(step);
+  }
+
   private stopRadioStatic() {
+    this.stopRadioFade();
     const source = this.radioStatic;
     this.radioStatic = null;
     const gain = this.radioGain;
@@ -560,6 +608,12 @@ export class SoundEngine {
     }
     this.windowPhase = "picture";
     this.stopMuffled(WINDOW_FADE_SEC);
+  }
+
+  pauseArchiveBed() {
+    this.windowPhase = "picture";
+    this.stopRadioStatic();
+    this.stopMuffled(0);
   }
 
   beginWindowShrink() {

@@ -42,8 +42,8 @@ export function tuneActiveLook(): TuneLook {
     sat: 1,
     rgb: 0,
     noise: 0,
-    scale: ARCHIVE.tuneApproachScale,
-    z: ARCHIVE.tuneApproachZ,
+    scale: 1,
+    z: 0,
     zIndex: 8,
   };
 }
@@ -139,8 +139,8 @@ export function approachLook(t: number): TuneLook {
     sat: mix(idle.sat, 1, u),
     rgb: mix(idle.rgb, 0.25, u),
     noise: mix(idle.noise, 0.03, u),
-    scale: mix(1, ARCHIVE.tuneApproachScale, u),
-    z: mix(0, ARCHIVE.tuneApproachZ, u),
+    scale: 1,
+    z: 0,
     zIndex: 3,
   };
 }
@@ -237,14 +237,8 @@ export function playTuneLock(root: HTMLElement | undefined) {
   if (!root) {
     return;
   }
-  const shift =
-    (Math.random() < 0.5 ? -1 : 1) *
-    (ARCHIVE.tuneLockShiftMin +
-      Math.random() * (ARCHIVE.tuneLockShiftMax - ARCHIVE.tuneLockShiftMin));
   root.classList.add("arc-win--tune-lock");
-  root.style.translate = `${shift.toFixed(1)}px 0`;
   window.setTimeout(() => {
     root.classList.remove("arc-win--tune-lock");
-    root.style.translate = "";
   }, ARCHIVE.tuneLockMs);
 }

@@ -687,15 +687,137 @@
   left: 0;
   right: 0;
   bottom: 0;
+  z-index: 3;
   height: 4px;
   background: rgba(255, 255, 255, 0.22);
   cursor: pointer;
+}
+
+.arc-detail__bar-zone {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 4;
+  height: 72px;
+}
+
+.arc-detail__hero .arc-detail__bar {
+  opacity: 0;
+  pointer-events: none;
+  padding-top: 22px;
+  box-sizing: content-box;
+  background-clip: content-box;
+  transition: opacity 200ms ease;
+}
+
+.arc-detail__hero .arc-detail__player[data-bar="1"] .arc-detail__bar {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.arc-detail__hero .arc-detail__bar i {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 4px;
 }
 
 .arc-detail__bar i {
   display: block;
   height: 100%;
   background: #fff;
+}
+
+body[data-recall="hitch"] .arc-win,
+body[data-recall="hitch"] .arc-info,
+body[data-recall="rise"] .arc-win,
+body[data-recall="rise"] .arc-info,
+body[data-recall="void"] .arc-win,
+body[data-recall="void"] .arc-info,
+body[data-recall="settle"] .arc-win,
+body[data-recall="settle"] .arc-info,
+body[data-recall="reveal"] .arc-win,
+body[data-recall="reveal"] .arc-info,
+body[data-recall="hitch"] .arc-portal,
+body[data-recall="rise"] .arc-portal,
+body[data-recall="void"] .arc-portal,
+body[data-recall="settle"] .arc-portal,
+body[data-recall="reveal"] .arc-portal {
+  pointer-events: none !important;
+}
+
+body[data-recall="hitch"] .arc-win,
+body[data-recall="hitch"] .arc-info {
+  animation: arc-recall-hitch 180ms linear;
+}
+
+@keyframes arc-recall-hitch {
+  0% {
+    translate: 0 0;
+  }
+  35% {
+    translate: -2px -2px;
+  }
+  70% {
+    translate: 2px -1px;
+  }
+  100% {
+    translate: 0 -5px;
+  }
+}
+
+body[data-recall="rise"] .arc-win,
+body[data-recall="void"] .arc-win,
+body[data-recall="settle"] .arc-win,
+body[data-recall="reveal"] .arc-win,
+body[data-recall="rise"] .arc-info,
+body[data-recall="void"] .arc-info,
+body[data-recall="settle"] .arc-info,
+body[data-recall="reveal"] .arc-info {
+  transform-origin: center center;
+  animation-name: arc-recall-up;
+  animation-duration: var(--arc-recall-dur, 1200ms);
+  animation-timing-function: var(--arc-recall-ease, cubic-bezier(0.55, 0.02, 0.82, 0.2));
+  animation-delay: var(--arc-recall-delay, 0ms);
+  animation-fill-mode: forwards;
+}
+
+body[data-recall="void"] .arc-crt-top,
+body[data-recall="settle"] .arc-crt-top,
+body[data-recall="reveal"] .arc-crt-top {
+  opacity: 0;
+  transition: opacity 220ms linear;
+}
+
+.arc-root[data-recall="reveal"] {
+  animation: arc-recall-welcome 720ms ease forwards;
+}
+
+@keyframes arc-recall-up {
+  0% {
+    translate: 0 -5px;
+    rotate: 0deg;
+    animation-timing-function: linear;
+  }
+  12% {
+    translate: 0 -2px;
+    rotate: 0deg;
+    animation-timing-function: var(--arc-recall-ease, cubic-bezier(0.55, 0.02, 0.82, 0.2));
+  }
+  100% {
+    translate: 0 -132vh;
+    rotate: var(--arc-recall-rot, -7deg);
+  }
+}
+
+@keyframes arc-recall-welcome {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
 }
 
 @keyframes arc-win-slide {

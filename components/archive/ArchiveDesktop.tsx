@@ -1,6 +1,6 @@
 "use client";
 
-import {useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent} from "react";
+import {useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent} from "react";
 import {createPortal} from "react-dom";
 import {useRouter} from "next/navigation";
 
@@ -33,6 +33,14 @@ import {
 } from "@/components/archive/archiveVideos";
 import {SoundEngine} from "@/lib/sound/SoundEngine";
 import {decidePanelSide, InfoPanel, type InfoSide} from "@/components/archive/InfoPanel";
+import {ArchiveRecallContext} from "@/components/archive/ArchiveSequence";
+import {
+  flightFor,
+  pushSample,
+  readShake,
+  type Flight,
+  type RecallPhase,
+} from "@/components/archive/archiveRecall";
 import {frequencyForPage} from "@/lib/sound/pageFrequencies";
 import {usePageTransitionSound} from "@/lib/sound/usePageTransitionSound";
 import type {Project} from "@/sanity/lib/queries";
@@ -375,6 +383,8 @@ type ArchiveDesktopProps = {
 export function ArchiveDesktop({projects, openSlug}: ArchiveDesktopProps) {
   const playTransitionSound = usePageTransitionSound();
   const router = useRouter();
+  const publishRecall = useContext(ArchiveRecallContext);
+  const [recallPhase, setRecallPhase] = useState<RecallPhase>("idle");
   const items = useMemo(() => buildArchiveItems(projects), [projects]);
   const [zMap, setZMap] = useState<Record<string, number>>({});
   const [zTop, setZTop] = useState(1);
@@ -404,6 +414,10 @@ export function ArchiveDesktop({projects, openSlug}: ArchiveDesktopProps) {
   const [ready, setReady] = useState(false);
   const videosRef = useRef(new Map<string, VideoBind>());
   const pointerRef = useRef({x: 0, y: 0, speed: 0, t: 0});
+  const recallPhaseRef = useRef<RecallPhase>("idle");
+  const flightRef = useRef(new Map<string, Flight>());
+  const publishRecallRef = useRef(publishRecall);
+  publishRecallRef.current = publishRecall;
   const nodesRef = useRef(new Map<string, HTMLElement>());
   const viewRef = useRef(new Set<string>());
   const ioRef = useRef<IntersectionObserver | null>(null);
@@ -436,10 +450,12 @@ export function ArchiveDesktop({projects, openSlug}: ArchiveDesktopProps) {
   const lockMapRef = useRef(lockMap);
   const tunedRef = useRef(tuned);
   const openRef = useRef(openSlug);
+  const openIdRef = useRef<string | null>(null);
   itemsRef.current = items;
   lockMapRef.current = lockMap;
   tunedRef.current = tuned;
   openRef.current = openSlug;
+  openIdRef.current = openId;
   stoodRef.current = stoodId;
   const windowAudioRef = useRef<"bed" | "muffle" | "picture">("bed");
   const heardWinRef = useRef<string | null>(null);
@@ -502,9 +518,9 @@ export function ArchiveDesktop({projects, openSlug}: ArchiveDesktopProps) {
         releaseArchiveAudio(el);
       }
       heardWinRef.current = null;
-      if (windowAudioRef.current !== "bed") {
-        SoundEngine.get().finishWindowShrink();
-        windowAudioRef.current = "bed";
+      if (windowAudioRef.current !== "picture") {
+        SoundEngine.get().pauseArchiveBed();
+        windowAudioRef.current = "picture";
       }
       return;
     }
@@ -865,6 +881,52 @@ export function ArchiveDesktop({projects, openSlug}: ArchiveDesktopProps) {
       speed: 0,
       t: 0,
     };
+    const samples: {x: number; y: number; t: number}[] = [];
+    const timers: number[] = [];
+    const mark = (phase: RecallPhase) => {
+      recallPhaseRef.current = phase;
+      if (phase === "idle") {
+        delete document.body.dataset.recall;
+        document.documentElement.style.removeProperty("--arc-recall-lift");
+        document.documentElement.style.removeProperty("--arc-recall-shake");
+      } else {
+        document.body.dataset.recall = phase;
+      }
+      publishRecallRef.current(phase);
+      setRecallPhase(phase);
+    };
+    const beginRecall = () => {
+      const phase = recallPhaseRef.current;
+      if (phase !== "idle" && phase !== "charge") {
+        return;
+      }
+      if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+        mark("reveal");
+        return;
+      }
+      const flights = new Map<string, Flight>();
+      let maxEnd = 900;
+      for (const item of itemsRef.current) {
+        const role =
+          openIdRef.current === item.id
+            ? "detail"
+            : stoodRef.current === item.id
+              ? "stood"
+              : "desk";
+        const flight = flightFor(item.id, item.w, item.h, role);
+        flights.set(item.id, flight);
+        maxEnd = Math.max(maxEnd, flight.delay + flight.dur);
+      }
+      flightRef.current = flights;
+      document.documentElement.style.removeProperty("--arc-recall-shake");
+      mark("hitch");
+      timers.push(window.setTimeout(() => mark("rise"), 180));
+      timers.push(window.setTimeout(() => mark("void"), 180 + maxEnd));
+      timers.push(window.setTimeout(() => mark("settle"), 180 + maxEnd + 520));
+      timers.push(
+        window.setTimeout(() => mark("reveal"), 180 + maxEnd + 520 + 980 + 800),
+      );
+    };
     const onMove = (event: globalThis.PointerEvent) => {
       const now = performance.now();
       const prev = pointerRef.current;
@@ -875,6 +937,10 @@ export function ArchiveDesktop({projects, openSlug}: ArchiveDesktopProps) {
         speed: Math.hypot(event.clientX - prev.x, event.clientY - prev.y) / dt,
         t: now,
       };
+      const phase = recallPhaseRef.current;
+      if (phase === "idle" || phase === "charge") {
+        pushSample(samples, event.clientX, event.clientY, now);
+      }
     };
     const tick = (now: number) => {
       raf = window.requestAnimationFrame(tick);
@@ -885,7 +951,18 @@ export function ArchiveDesktop({projects, openSlug}: ArchiveDesktopProps) {
       if (deskRef.current) {
         deskRef.current.dataset.still = pointer.speed < 0.02 ? "1" : "0";
       }
-      const live = tunedRef.current && !openRef.current && !motionRef.current;
+      const recallNow = recallPhaseRef.current;
+      if (recallNow === "idle") {
+        const gesture = readShake(samples, now);
+        if (gesture.ready) {
+          beginRecall();
+        }
+      }
+      const live =
+        (recallPhaseRef.current === "idle" || recallPhaseRef.current === "charge") &&
+        tunedRef.current &&
+        !openRef.current &&
+        !motionRef.current;
       if (live && !stoodRef.current) {
         const hit = document.elementFromPoint(pointer.x, pointer.y);
         const node = hit?.closest<HTMLElement>("[data-win]");
@@ -952,8 +1029,12 @@ export function ArchiveDesktop({projects, openSlug}: ArchiveDesktopProps) {
     return () => {
       window.removeEventListener("pointermove", onMove);
       window.cancelAnimationFrame(raf);
+      timers.forEach((id) => window.clearTimeout(id));
       tuneRef.current.timers.forEach((id) => window.clearTimeout(id));
       tuneRef.current.timers = [];
+      delete document.body.dataset.recall;
+      document.documentElement.style.removeProperty("--arc-recall-lift");
+      document.documentElement.style.removeProperty("--arc-recall-shake");
     };
   }, []);
 
@@ -1158,6 +1239,27 @@ export function ArchiveDesktop({projects, openSlug}: ArchiveDesktopProps) {
     cueArchiveVideo(id, el, item?.cueAt ?? ARCHIVE.videoCueAt);
   };
 
+  const recallFlying =
+    recallPhase === "rise" ||
+    recallPhase === "void" ||
+    recallPhase === "settle" ||
+    recallPhase === "reveal";
+  const recallVars = (id: string): CSSProperties | undefined => {
+    if (!recallFlying) {
+      return undefined;
+    }
+    const flight = flightRef.current.get(id);
+    if (!flight) {
+      return undefined;
+    }
+    return {
+      ["--arc-recall-delay" as string]: `${flight.delay}ms`,
+      ["--arc-recall-dur" as string]: `${flight.dur}ms`,
+      ["--arc-recall-rot" as string]: `${flight.rot}deg`,
+      ["--arc-recall-ease" as string]: flight.ease,
+    };
+  };
+
   if (!ready) {
     return null;
   }
@@ -1233,6 +1335,7 @@ export function ArchiveDesktop({projects, openSlug}: ArchiveDesktopProps) {
           returning ||
           detail ||
           (viewRev >= 0 && viewRef.current.has(item.id));
+        const fly = recallVars(item.id);
         const article = (
           <article
             key={item.id}
@@ -1270,6 +1373,7 @@ export function ArchiveDesktop({projects, openSlug}: ArchiveDesktopProps) {
               ["--arc-slide-from" as string]: `${slide?.fromVh ?? ARCHIVE.slideFromVhMin}vh`,
               ["--arc-return-ms" as string]: `${ARCHIVE.autoLayMoveMs}ms`,
               ["--arc-return-ease" as string]: ARCHIVE.autoLayEase,
+              ...fly,
               filter: [
                 sliding ? `url(#${blurFilterId(item.id)})` : null,
                 !item.clickable && look.gray > 0 ? `grayscale(${look.gray})` : null,
@@ -1397,14 +1501,16 @@ export function ArchiveDesktop({projects, openSlug}: ArchiveDesktopProps) {
         );
         if (detail) {
           return createPortal(
-            <div className="arc-portal arc-portal--detail">{article}</div>,
+            <div className="arc-portal arc-portal--detail" style={fly}>
+              {article}
+            </div>,
             document.body,
             item.id,
           );
         }
         if (stood || returning) {
           return createPortal(
-            <div className="arc-portal arc-portal--stand">
+            <div className="arc-portal arc-portal--stand" style={fly}>
               {stood ? (
                 <InfoPanel
                   item={item}
@@ -1487,9 +1593,11 @@ function DetailVideo({
   lead: boolean;
 }) {
   const ref = useRef<HTMLVideoElement>(null);
+  const zoneRef = useRef<HTMLDivElement>(null);
   const [muted, setMuted] = useState(false);
   const [paused, setPaused] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [barOn, setBarOn] = useState(false);
 
   useEffect(() => {
     const el = ref.current;
@@ -1564,6 +1672,39 @@ function DetailVideo({
     if (!lead) {
       return;
     }
+    const video = ref.current;
+    const zone = zoneRef.current;
+    if (!video || !zone) {
+      return;
+    }
+    const fit = () => {
+      const box = video.getBoundingClientRect();
+      const vw = video.videoWidth;
+      const vh = video.videoHeight;
+      if (!vw || !vh || box.height < 1) {
+        zone.style.height = "72px";
+        return;
+      }
+      const scale = Math.min(box.width / vw, box.height / vh);
+      const pictureBottom = box.top + (box.height - vh * scale) / 2 + vh * scale;
+      const room = box.bottom - pictureBottom - 8;
+      const height = room >= 48 ? Math.min(72, room) : Math.max(28, room);
+      zone.style.height = `${Math.round(height)}px`;
+    };
+    fit();
+    video.addEventListener("loadedmetadata", fit);
+    const observer = new ResizeObserver(fit);
+    observer.observe(video);
+    return () => {
+      video.removeEventListener("loadedmetadata", fit);
+      observer.disconnect();
+    };
+  }, [lead, src]);
+
+  useEffect(() => {
+    if (!lead) {
+      return;
+    }
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== " " && event.code !== "Space") {
         return;
@@ -1595,8 +1736,19 @@ function DetailVideo({
     el.currentTime = ((event.clientX - box.left) / Math.max(box.width, 1)) * el.duration;
   };
 
+  const bar = (
+    <div
+      className="arc-detail__bar"
+      onPointerDown={seek}
+      role="progressbar"
+      aria-valuenow={Math.round(progress * 100)}
+    >
+      <i style={{width: `${Math.min(100, Math.max(0, progress * 100))}%`}} />
+    </div>
+  );
+
   return (
-    <div className="arc-detail__player">
+    <div className="arc-detail__player" data-bar={lead && barOn ? "1" : "0"}>
       <video
         ref={ref}
         src={src}
@@ -1614,14 +1766,18 @@ function DetailVideo({
       >
         {muted ? "SND OFF" : "SND ON"}
       </button>
-      <div
-        className="arc-detail__bar"
-        onPointerDown={seek}
-        role="progressbar"
-        aria-valuenow={Math.round(progress * 100)}
-      >
-        <i style={{width: `${Math.min(100, Math.max(0, progress * 100))}%`}} />
-      </div>
+      {lead ? (
+        <div
+          ref={zoneRef}
+          className="arc-detail__bar-zone"
+          onPointerEnter={() => setBarOn(true)}
+          onPointerLeave={() => setBarOn(false)}
+        >
+          {bar}
+        </div>
+      ) : (
+        bar
+      )}
     </div>
   );
 }
