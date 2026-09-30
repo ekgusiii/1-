@@ -30,7 +30,7 @@ import {
   setArchiveHearMuted,
   type VideoBind,
 } from "@/components/archive/archiveVideos";
-import {SoundEngine} from "@/lib/sound/SoundEngine";
+import {SOUND_LEAD_SEC, SoundEngine} from "@/lib/sound/SoundEngine";
 import {decidePanelSide, InfoPanel, type InfoSide} from "@/components/archive/InfoPanel";
 import {ArchiveRecallContext} from "@/components/archive/ArchiveSequence";
 import {
@@ -539,7 +539,10 @@ export function ArchiveDesktop({projects, openSlug}: ArchiveDesktopProps) {
     heardWinRef.current = null;
     SoundEngine.get().beginWindowShrink();
     windowAudioRef.current = "muffle";
-    const wait = returningId ? ARCHIVE.autoLayMoveMs : ARCHIVE.layMs;
+    const wait = Math.max(
+      0,
+      (returningId ? ARCHIVE.autoLayMoveMs : ARCHIVE.layMs) - SOUND_LEAD_SEC * 1000,
+    );
     const timer = window.setTimeout(() => {
       if (stoodRef.current || openRef.current) {
         return;
@@ -1737,6 +1740,8 @@ function WinBody({
   return <div className="arc-win__empty">NO SIGNAL</div>;
 }
 
+const PORTRAIT_SHIFT_X = "13%";
+
 function DetailVideo({
   src,
   poster,
@@ -1752,6 +1757,25 @@ function DetailVideo({
   const [paused, setPaused] = useState(false);
   const [progress, setProgress] = useState(0);
   const [barOn, setBarOn] = useState(false);
+  const [portrait, setPortrait] = useState(false);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || !lead) {
+      return;
+    }
+    const read = () => {
+      const width = el.videoWidth;
+      const height = el.videoHeight;
+      if (width > 0 && height > 0) {
+        setPortrait(height > width);
+      }
+    };
+    setPortrait(false);
+    read();
+    el.addEventListener("loadedmetadata", read);
+    return () => el.removeEventListener("loadedmetadata", read);
+  }, [lead, src]);
 
   useEffect(() => {
     const el = ref.current;
@@ -1902,7 +1926,16 @@ function DetailVideo({
   );
 
   return (
-    <div className="arc-detail__player" data-bar={lead && barOn ? "1" : "0"}>
+    <div
+      className="arc-detail__player"
+      data-bar={lead && barOn ? "1" : "0"}
+      data-portrait={lead && portrait ? "1" : "0"}
+      style={
+        lead && portrait
+          ? ({["--portrait-shift-x" as string]: PORTRAIT_SHIFT_X} as CSSProperties)
+          : undefined
+      }
+    >
       <video
         ref={ref}
         src={src}

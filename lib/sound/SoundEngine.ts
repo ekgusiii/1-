@@ -11,6 +11,16 @@ const MUFFLED_URL = "/sounds/airplane-muffled.mp3";
 // Same bus level as the cabin bed at RADIO_STATIC_GAIN, so the first expand does not drop the volume.
 const MUFFLED_GAIN = 0.48;
 const WINDOW_FADE_SEC = 0.15;
+// How much earlier the subpage bed starts, versus the window rise and the return from the first zoom.
+// Edit this number only. Also skips that much of the file head (leading silence).
+export const SOUND_LEAD_SEC = 0.15;
+
+function cueOffset(buffer: AudioBuffer) {
+  if (SOUND_LEAD_SEC <= 0) {
+    return 0;
+  }
+  return Math.min(SOUND_LEAD_SEC, Math.max(0, buffer.duration - 0.05));
+}
 
 let radioStaticData: Promise<ArrayBuffer> | null = null;
 
@@ -399,7 +409,7 @@ export class SoundEngine {
     gain.gain.value = 0;
     source.connect(gain);
     gain.connect(this.cabinFilter ?? this.archiveBed);
-    source.start();
+    source.start(this.ctx.currentTime, cueOffset(this.radioBuffer));
     this.radioStatic = source;
     this.radioGain = gain;
     this.fadeRadioIn(gain);
@@ -426,7 +436,9 @@ export class SoundEngine {
     if (this.radioGain !== gain) {
       return;
     }
-    const p = Math.min(1, Math.max(0, progress));
+    const led =
+      SOUND_LEAD_SEC > 0 ? Math.min(1, progress + SOUND_LEAD_SEC / CLOUD_RISE_SEC) : progress;
+    const p = Math.min(1, Math.max(0, led));
     gain.gain.value = RADIO_STATIC_GAIN * p * p;
   }
 
@@ -508,9 +520,12 @@ export class SoundEngine {
       const now = this.ctx.currentTime;
       const current = this.muffledGain.gain.value;
       this.muffledGain.gain.cancelScheduledValues(now);
-      this.muffledGain.gain.setValueAtTime(Math.max(0.0001, current), now);
-      if (fadeSec > 0 && current < MUFFLED_GAIN * 0.9) {
-        this.muffledGain.gain.linearRampToValueAtTime(MUFFLED_GAIN, now + fadeSec);
+      const lead = fadeSec > 0 ? Math.min(Math.max(0, SOUND_LEAD_SEC), fadeSec) : 0;
+      const from =
+        fadeSec > 0 ? Math.max(current, MUFFLED_GAIN * (lead / fadeSec)) : MUFFLED_GAIN;
+      this.muffledGain.gain.setValueAtTime(Math.max(0.0001, from), now);
+      if (fadeSec > lead && from < MUFFLED_GAIN * 0.9) {
+        this.muffledGain.gain.linearRampToValueAtTime(MUFFLED_GAIN, now + (fadeSec - lead));
       } else {
         this.muffledGain.gain.setValueAtTime(MUFFLED_GAIN, now);
       }
@@ -521,13 +536,15 @@ export class SoundEngine {
     source.loop = true;
     const gain = this.ctx.createGain();
     const now = this.ctx.currentTime;
-    gain.gain.setValueAtTime(fadeSec > 0 ? 0.0001 : MUFFLED_GAIN, now);
-    if (fadeSec > 0) {
-      gain.gain.linearRampToValueAtTime(MUFFLED_GAIN, now + fadeSec);
+    const lead = fadeSec > 0 ? Math.min(Math.max(0, SOUND_LEAD_SEC), fadeSec) : 0;
+    const from = fadeSec > 0 ? Math.max(0.0001, MUFFLED_GAIN * (lead / fadeSec)) : MUFFLED_GAIN;
+    gain.gain.setValueAtTime(from, now);
+    if (fadeSec > lead) {
+      gain.gain.linearRampToValueAtTime(MUFFLED_GAIN, now + (fadeSec - lead));
     }
     source.connect(gain);
     gain.connect(this.bus);
-    source.start();
+    source.start(now, fadeSec > 0 ? cueOffset(this.muffledBuffer) : 0);
     this.muffled = source;
     this.muffledGain = gain;
   }

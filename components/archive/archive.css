@@ -598,7 +598,7 @@
 .arc-detail__hero-img {
   position: absolute;
   top: 0;
-  right: 24px;
+  right: calc(24px + var(--portrait-shift-x, 0px));
   bottom: 0;
   left: calc(10px + min(48%, 320px) + 16px);
   margin: 0;
