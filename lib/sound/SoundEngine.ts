@@ -159,6 +159,7 @@ export class SoundEngine {
   private whistleGain: GainNode | null = null;
   private voices: Voice[] = [];
   private started = false;
+  private startTask: Promise<void> | null = null;
   private muted = false;
   private moving = false;
   private stopAt = 0;
@@ -184,7 +185,18 @@ export class SoundEngine {
       }
       return;
     }
+    if (!this.startTask) {
+      this.startTask = this.openContext();
+    }
+    try {
+      await this.startTask;
+    } catch (error) {
+      this.startTask = null;
+      throw error;
+    }
+  }
 
+  private async openContext() {
     const ctx = new AudioContext();
     this.ctx = ctx;
     if (ctx.state === "suspended") {
@@ -336,8 +348,10 @@ export class SoundEngine {
     hissGain.connect(mainBed);
     hiss.start();
 
-    void this.prepareRadioStatic(ctx);
-    void this.prepareMuffled(ctx);
+    if (onArchive) {
+      void this.prepareRadioStatic(ctx);
+      void this.prepareMuffled(ctx);
+    }
 
     const whistle = ctx.createOscillator();
     whistle.type = "sine";
@@ -601,6 +615,8 @@ export class SoundEngine {
     this.ambient = mode;
     if (mode === "archive") {
       this.fadeBed(this.mainBed, 0, 0.1);
+      void this.prepareRadioStatic(this.ctx);
+      void this.prepareMuffled(this.ctx);
       if (this.windowPhase === "bed") {
         this.startRadioStatic();
       }
