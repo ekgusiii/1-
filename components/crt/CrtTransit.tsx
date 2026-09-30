@@ -32,6 +32,8 @@ const recallOsw = Oswald({
   variable: "--font-recall-osw",
 });
 
+export const recallFaceClass = `${recallCond.variable} ${recallOsw.variable}`;
+
 type CrtTransitProps = {
   plate: HTMLCanvasElement | null;
   bounds: TextBounds | null;

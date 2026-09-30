@@ -1,12 +1,12 @@
 "use client";
 
-import {useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent} from "react";
+import {useContext, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type PointerEvent} from "react";
 import {createPortal} from "react-dom";
 import {useRouter} from "next/navigation";
 
 import {ARCHIVE} from "@/components/archive/archiveConfig";
 import {slideBlurAt} from "@/components/archive/archiveSpring";
-import {buildArchiveItems, type ArchiveItem} from "@/components/archive/archiveItems";
+import {buildArchiveItems, sessionSeed, type ArchiveItem} from "@/components/archive/archiveItems";
 import {buildSpawnPlan} from "@/components/archive/archiveSpawn";
 import {
   approachLook,
@@ -22,7 +22,6 @@ import {
   type TuneRank,
 } from "@/components/archive/archiveTune";
 import {
-  claimArchiveVideo,
   cueArchiveVideo,
   driveVideos,
   holdArchiveVideo,
@@ -186,7 +185,7 @@ function poseTransform(
     const dy = plan?.dy ?? 0;
     return `rotateX(0deg) rotateZ(0deg) translate(${dx}px, ${dy}px) scale(${standScale})`;
   }
-  return `rotateX(${item.tiltX}deg) rotateZ(${item.tiltZ}deg) translateZ(var(--arc-tune-z, 0px)) scale(calc(${scale} * var(--arc-tune-scale, 1))) translateY(var(--arc-slide-y, 0px))`;
+  return `rotateX(${item.tiltX}deg) rotateZ(${item.tiltZ}deg) translateZ(calc(var(--arc-tune-z, 0px) + ${item.z}px)) scale(calc(${scale} * var(--arc-tune-scale, 1))) translateY(var(--arc-slide-y, 0px))`;
 }
 
 type TuneEngine = {
@@ -375,6 +374,18 @@ function blurFilterId(id: string) {
   return `arc-mblur-${id.replace(/[^a-zA-Z0-9_-]/g, "_")}`;
 }
 
+const WINDOW_SHAKE = {
+  speedMin: 1.8,
+  reversals: 3,
+  windowMs: 700,
+  flipPx: 14,
+  decay: 2.6,
+  maxPx: 8,
+  maxRot: 1.1,
+};
+
+const SHAKE_EXTRA_MS = 700;
+
 type ArchiveDesktopProps = {
   projects: Project[];
   openSlug: string | null;
@@ -385,7 +396,11 @@ export function ArchiveDesktop({projects, openSlug}: ArchiveDesktopProps) {
   const router = useRouter();
   const publishRecall = useContext(ArchiveRecallContext);
   const [recallPhase, setRecallPhase] = useState<RecallPhase>("idle");
-  const items = useMemo(() => buildArchiveItems(projects), [projects]);
+  const [items, setItems] = useState<ArchiveItem[]>([]);
+  useEffect(() => {
+    const loosenSeed = (Math.floor(Math.random() * 0xfffe) + 1) >>> 0;
+    setItems(buildArchiveItems(projects, sessionSeed(), loosenSeed));
+  }, [projects]);
   const [zMap, setZMap] = useState<Record<string, number>>({});
   const [zTop, setZTop] = useState(1);
   const [motion, setMotion] = useState<Motion | null>(null);
@@ -495,18 +510,6 @@ export function ArchiveDesktop({projects, openSlug}: ArchiveDesktopProps) {
       engine.beginWindowExpand();
       windowAudioRef.current = "muffle";
     }
-    const timer = window.setTimeout(() => {
-      if (stoodRef.current !== id || openRef.current) {
-        return;
-      }
-      engine.finishWindowExpand();
-      windowAudioRef.current = "picture";
-      const el = videosRef.current.get(id)?.el;
-      if (el) {
-        claimArchiveVideo(el);
-      }
-    }, ARCHIVE.standMs);
-    return () => window.clearTimeout(timer);
   }, [stoodId, standReady, openSlug]);
 
   useEffect(() => {
@@ -883,6 +886,87 @@ export function ArchiveDesktop({projects, openSlug}: ArchiveDesktopProps) {
     };
     const samples: {x: number; y: number; t: number}[] = [];
     const timers: number[] = [];
+    const flips: number[] = [];
+    const lastSign = {x: 0, y: 0};
+    const shakeDir = {x: 0, y: 0};
+    const profiles = new Map<
+      string,
+      {amp: number; phase: number; phase2: number; grainMs: number; ax: number; ay: number}
+    >();
+    let intensity = 0;
+    let shakePainted = false;
+    let lastFrame = 0;
+    let shakeHoldUntil = 0;
+    let heldIntensity = 0;
+    const hash01 = (id: string, salt: number) => {
+      let h = (2166136261 ^ salt) >>> 0;
+      for (let i = 0; i < id.length; i += 1) {
+        h = Math.imul(h ^ id.charCodeAt(i), 16777619);
+      }
+      return (h >>> 0) / 4294967295;
+    };
+    const profileOf = (id: string) => {
+      const found = profiles.get(id);
+      if (found) {
+        return found;
+      }
+      const next = {
+        amp: 0.55 + hash01(id, 1) * 0.45,
+        phase: hash01(id, 2),
+        phase2: hash01(id, 3),
+        grainMs: 48 + Math.round(hash01(id, 4) * 46),
+        ax: hash01(id, 5) < 0.5 ? -1 : 1,
+        ay: hash01(id, 6) < 0.5 ? -1 : 1,
+      };
+      profiles.set(id, next);
+      return next;
+    };
+    const clearJolt = () => {
+      intensity = 0;
+      shakePainted = false;
+      const root = document.documentElement;
+      root.style.removeProperty("--arc-jolt-x");
+      root.style.removeProperty("--arc-jolt-y");
+      root.style.removeProperty("--arc-jolt-rot");
+      for (const node of nodesRef.current.values()) {
+        node.style.removeProperty("--arc-jolt-x");
+        node.style.removeProperty("--arc-jolt-y");
+        node.style.removeProperty("--arc-jolt-rot");
+      }
+    };
+    const paintShake = (now: number) => {
+      if (intensity <= 0) {
+        if (shakePainted) {
+          clearJolt();
+        }
+        return;
+      }
+      shakePainted = true;
+      const t = now * 0.001;
+      for (const [id, node] of nodesRef.current) {
+        const profile = profileOf(id);
+        const a = Math.sin(t * (8.4 + profile.phase * 6.5) + profile.phase * 5.2);
+        const b = Math.sin(t * (15.3 + profile.phase2 * 4.8) + profile.phase2 * 2.7);
+        const grain = hash01(id, Math.floor(now / profile.grainMs)) * 2 - 1;
+        const wave = a * 0.5 + b * 0.28 + grain * 0.22;
+        const px = WINDOW_SHAKE.maxPx * intensity * profile.amp;
+        const x = Math.max(
+          -WINDOW_SHAKE.maxPx,
+          Math.min(WINDOW_SHAKE.maxPx, px * (shakeDir.x * 0.62 + wave * profile.ax * 0.55)),
+        );
+        const y = Math.max(
+          -WINDOW_SHAKE.maxPx,
+          Math.min(WINDOW_SHAKE.maxPx, px * (shakeDir.y * 0.62 + wave * profile.ay * 0.48)),
+        );
+        const rot = Math.max(
+          -WINDOW_SHAKE.maxRot,
+          Math.min(WINDOW_SHAKE.maxRot, intensity * WINDOW_SHAKE.maxRot * profile.amp * wave),
+        );
+        node.style.setProperty("--arc-jolt-x", `${x.toFixed(2)}px`);
+        node.style.setProperty("--arc-jolt-y", `${y.toFixed(2)}px`);
+        node.style.setProperty("--arc-jolt-rot", `${rot.toFixed(2)}deg`);
+      }
+    };
     const mark = (phase: RecallPhase) => {
       recallPhaseRef.current = phase;
       if (phase === "idle") {
@@ -918,6 +1002,7 @@ export function ArchiveDesktop({projects, openSlug}: ArchiveDesktopProps) {
         maxEnd = Math.max(maxEnd, flight.delay + flight.dur);
       }
       flightRef.current = flights;
+      clearJolt();
       document.documentElement.style.removeProperty("--arc-recall-shake");
       mark("hitch");
       timers.push(window.setTimeout(() => mark("rise"), 180));
@@ -931,15 +1016,42 @@ export function ArchiveDesktop({projects, openSlug}: ArchiveDesktopProps) {
       const now = performance.now();
       const prev = pointerRef.current;
       const dt = Math.max(8, now - (prev.t || now));
+      const dx = event.clientX - prev.x;
+      const dy = event.clientY - prev.y;
+      const speed = Math.hypot(dx, dy) / dt;
       pointerRef.current = {
         x: event.clientX,
         y: event.clientY,
-        speed: Math.hypot(event.clientX - prev.x, event.clientY - prev.y) / dt,
+        speed,
         t: now,
       };
       const phase = recallPhaseRef.current;
       if (phase === "idle" || phase === "charge") {
         pushSample(samples, event.clientX, event.clientY, now);
+      }
+      if (event.pointerType === "touch" || !prev.t || speed < WINDOW_SHAKE.speedMin) {
+        return;
+      }
+      const len = Math.hypot(dx, dy) || 1;
+      shakeDir.x += (dx / len - shakeDir.x) * 0.5;
+      shakeDir.y += (dy / len - shakeDir.y) * 0.5;
+      if (Math.abs(dx) >= WINDOW_SHAKE.flipPx) {
+        const sign = Math.sign(dx);
+        if (lastSign.x !== 0 && sign !== lastSign.x) {
+          flips.push(now);
+        }
+        lastSign.x = sign;
+      }
+      if (Math.abs(dy) >= WINDOW_SHAKE.flipPx) {
+        const sign = Math.sign(dy);
+        if (lastSign.y !== 0 && sign !== lastSign.y) {
+          flips.push(now);
+        }
+        lastSign.y = sign;
+      }
+      const cutoff = now - WINDOW_SHAKE.windowMs;
+      while (flips.length > 0 && flips[0]! < cutoff) {
+        flips.shift();
       }
     };
     const tick = (now: number) => {
@@ -948,15 +1060,56 @@ export function ArchiveDesktop({projects, openSlug}: ArchiveDesktopProps) {
       if (now - pointer.t > 48) {
         pointer.speed *= 0.82;
       }
-      if (deskRef.current) {
-        deskRef.current.dataset.still = pointer.speed < 0.02 ? "1" : "0";
-      }
+      const frameDt = Math.min(0.05, lastFrame ? (now - lastFrame) / 1000 : 0.016);
+      lastFrame = now;
       const recallNow = recallPhaseRef.current;
       if (recallNow === "idle") {
+        if (shakeHoldUntil) {
+          const left = shakeHoldUntil - now;
+          if (left <= 0) {
+            shakeHoldUntil = 0;
+            clearJolt();
+            beginRecall();
+          } else {
+            const fadeMs = 140;
+            const fade = left < fadeMs ? left / fadeMs : 1;
+            intensity = heldIntensity * fade;
+            paintShake(now);
+          }
+        } else {
         const gesture = readShake(samples, now);
         if (gesture.ready) {
-          beginRecall();
+          if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+            beginRecall();
+          } else {
+            shakeHoldUntil = now + SHAKE_EXTRA_MS;
+            heldIntensity = intensity;
+            paintShake(now);
+          }
+        } else {
+          const cutoff = now - WINDOW_SHAKE.windowMs;
+          while (flips.length > 0 && flips[0]! < cutoff) {
+            flips.shift();
+          }
+          const blocked = Boolean(openRef.current || stoodRef.current || motionRef.current);
+          const hot =
+            !blocked &&
+            pointer.speed >= WINDOW_SHAKE.speedMin &&
+            flips.length >= WINDOW_SHAKE.reversals;
+          if (hot) {
+            const gain = Math.min(1, (pointer.speed - WINDOW_SHAKE.speedMin) / 2.4);
+            intensity = Math.min(1, intensity + (0.45 + gain * 0.55) * Math.min(1, frameDt * 8));
+          } else {
+            intensity *= Math.exp(-WINDOW_SHAKE.decay * frameDt);
+            if (intensity < 0.012) {
+              intensity = 0;
+            }
+          }
+          paintShake(now);
         }
+        }
+      } else if (intensity > 0) {
+        clearJolt();
       }
       const live =
         (recallPhaseRef.current === "idle" || recallPhaseRef.current === "charge") &&
@@ -1035,6 +1188,7 @@ export function ArchiveDesktop({projects, openSlug}: ArchiveDesktopProps) {
       delete document.body.dataset.recall;
       document.documentElement.style.removeProperty("--arc-recall-lift");
       document.documentElement.style.removeProperty("--arc-recall-shake");
+      clearJolt();
     };
   }, []);
 

@@ -33,7 +33,7 @@ import {
   createGuideRefract,
   type GuideRefract,
 } from "@/components/crt/guideRefract";
-import { CrtTransit } from "@/components/crt/CrtTransit";
+import {CrtTransit, recallFaceClass} from "@/components/crt/CrtTransit";
 import { MainFx } from "@/components/MainFx";
 import { readMoireShare, publishTransitShare } from "@/lib/moireShare";
 import { frequencyForPage } from "@/lib/sound/pageFrequencies";
@@ -522,7 +522,7 @@ export function CrtScreen({ projects, routeSlug = null }: CrtScreenProps) {
   };
 
   return (
-    <main className="stage" data-archive-phase={archivePhase ?? "off"}>
+    <main className={`stage ${recallFaceClass}`} data-archive-phase={archivePhase ?? "off"}>
       <div ref={exitRef} className="crt-main-exit">
       <div
         ref={fxRootRef}

@@ -7,7 +7,9 @@ const VOICE_PAN = [-0.45, 0, 0.45] as const;
 const RADIO_STATIC_URL = "/sounds/airplane-cabin-loop.wav";
 const RADIO_STATIC_GAIN = 0.15;
 const MUFFLED_URL = "/sounds/airplane-muffled.mp3";
-const MUFFLED_GAIN = 0.15;
+// Cabin loop RMS is about -10.4 dBFS; this voice file is about -20.6 dBFS.
+// Same bus level as the cabin bed at RADIO_STATIC_GAIN, so the first expand does not drop the volume.
+const MUFFLED_GAIN = 0.48;
 const WINDOW_FADE_SEC = 0.15;
 
 let radioStaticData: Promise<ArrayBuffer> | null = null;

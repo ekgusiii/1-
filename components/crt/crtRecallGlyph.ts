@@ -7,7 +7,7 @@ export function clearRecallGlyphCache() {
 }
 
 function faceStack(face: RecallFace) {
-  const host = document.querySelector(".crt-transit");
+  const host = document.querySelector(".crt-transit") ?? document.querySelector(".stage");
   const cs = host ? getComputedStyle(host) : getComputedStyle(document.documentElement);
   const cond = cs.getPropertyValue("--font-recall-cond").trim();
   const osw = cs.getPropertyValue("--font-recall-osw").trim();

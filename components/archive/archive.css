@@ -752,6 +752,13 @@ body[data-recall="hitch"] .arc-info {
   animation: arc-recall-hitch 180ms linear;
 }
 
+.arc-win,
+.arc-info,
+.arc-portal {
+  translate: var(--arc-jolt-x, 0px) var(--arc-jolt-y, 0px);
+  rotate: var(--arc-jolt-rot, 0deg);
+}
+
 @keyframes arc-recall-hitch {
   0% {
     translate: 0 0;

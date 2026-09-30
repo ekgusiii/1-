@@ -1,5 +1,7 @@
 import {drawGuideTexture} from "@/components/crt/drawGuideTexture";
 import type {GuideProgram} from "@/components/crt/projectPreview";
+import {rasterRecallGlyph} from "@/components/crt/crtRecallGlyph";
+import {RECALL, RECALL_FRAGS} from "@/components/crt/crtRecall";
 
 const VERT = `
 attribute vec2 aPos;
@@ -24,6 +26,16 @@ uniform float uTextInk;
 uniform float uTextInside;
 uniform vec2 uTextMin;
 uniform vec2 uTextMax;
+uniform vec2 uChroma;
+uniform float uChromaMax;
+uniform float uChromaPink;
+uniform float uChromaGreen;
+uniform float uChromaJitter;
+uniform float uChromaDead;
+uniform float uPinkAlpha;
+uniform float uGreenAlpha;
+uniform vec3 uPinkColor;
+uniform vec3 uGreenColor;
 uniform sampler2D uText;
 uniform vec2 uHoleCenter;
 uniform float uHoleAmount;
@@ -179,19 +191,8 @@ vec4 sampleText(vec2 uv) {
 
   float motion = clamp(uTextInk, 0.0, 1.0);
   float inside = clamp(uTextInside, 0.0, 1.0);
-  vec3 mint = vec3(0.847, 0.961, 0.871);
   vec3 hot = vec3(0.97, 0.99, 1.0);
-  vec3 faded = vec3(1.0);
-  vec3 insideCol = mix(mint, hot, motion);
-  vec3 col = mix(faded, insideCol, inside);
-  col = mix(vec3(1.0), mix(col, vec3(0.96, 0.99, 1.0), uWash * 0.85), max(uWash, motion));
-
-  vec2 dir = toAspect(uv - letterC);
-  float ca = mix(0.0017, 0.0009, g);
-  vec2 off = fromAspect(dir / max(length(dir), 0.00001) * ca);
-  vec4 tR = sampleTextRaw(scaled + off);
-  vec4 tG = sampleTextRaw(scaled);
-  vec4 tB = sampleTextRaw(scaled - off);
+  vec4 core = sampleTextRaw(scaled);
 
   vec2 px = 3.2 / uResolution;
   float halo = 0.0;
@@ -202,13 +203,28 @@ vec4 sampleText(vec2 uv) {
   halo += sampleTextRaw(scaled + px * 0.72).a;
   halo += sampleTextRaw(scaled - px * 0.72).a;
   halo *= 0.167;
-  float bloom = (max(0.0, halo - tG.a) + halo * mix(0.22, 0.42, uWash)) * mix(motion * inside, uWash, 0.55);
+  float bloom = (max(0.0, halo - core.a) + halo * mix(0.22, 0.42, uWash)) * mix(motion * inside, uWash, 0.55);
 
-  vec4 text = vec4(col, tG.a);
-  text.rgb += vec3(0.16, -0.03, -0.05) * (tR.a - tG.a);
-  text.rgb += vec3(-0.04, 0.01, 0.2) * (tB.a - tG.a);
-  text.rgb = mix(text.rgb, hot, bloom * 0.85);
-  text.a = max(tG.a, max(tR.a, tB.a));
+  vec2 aim = uChroma;
+  float aimLen = length(aim);
+  if (aimLen > 1.0) {
+    aim /= aimLen;
+    aimLen = 1.0;
+  }
+  float reach = smoothstep(uChromaDead, 1.0, aimLen);
+  aim *= aimLen > 0.0001 ? reach / aimLen : 0.0;
+  float tick = floor(uTime * 22.0);
+  vec2 jitter = (vec2(hash(vec2(tick, 2.3)), hash(vec2(tick, 7.1))) - 0.5) * uChromaJitter / uResolution;
+  vec2 shift = aim * uChromaMax / uResolution + jitter;
+  float pA = sampleTextRaw(scaled - shift * uChromaPink).a * uPinkAlpha;
+  float gA = sampleTextRaw(scaled + shift * uChromaGreen).a * uGreenAlpha;
+  float accA = gA + pA * (1.0 - gA);
+  vec3 acc = (uGreenColor * gA * gA * (1.0 - pA) + uPinkColor * pA) / max(accA, 0.0001);
+  vec3 rgb = acc * (1.0 - core.a) + core.rgb * core.a;
+  float a = accA + core.a * (1.0 - accA);
+
+  vec4 text = vec4(rgb, a);
+  text.rgb = mix(text.rgb, hot, bloom * 0.4);
   return text;
 }
 
@@ -443,6 +459,52 @@ function compile(gl: WebGLRenderingContext, type: number, source: string) {
   return shader;
 }
 
+const WELCOME_TRACK = RECALL_FRAGS.find((frag) => frag.id === "play")?.track ?? 0.03;
+
+const WELCOME_CHROMA = {
+  maxPx: 14,
+  pink: 1,
+  green: 0.7,
+  follow: 0.18,
+  jitterPx: 0.55,
+  dead: 0.08,
+};
+
+function recallRgb(color: string): [number, number, number] {
+  const matched = color.match(/rgb\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)/);
+  if (!matched) {
+    return [1, 1, 1];
+  }
+  return [Number(matched[1]) / 255, Number(matched[2]) / 255, Number(matched[3]) / 255];
+}
+
+function inkBox(canvas: HTMLCanvasElement) {
+  const read = canvas.getContext("2d");
+  if (!read) {
+    return {l: 0, t: 0, r: canvas.width, b: canvas.height};
+  }
+  const data = read.getImageData(0, 0, canvas.width, canvas.height).data;
+  let l = canvas.width;
+  let t = canvas.height;
+  let r = 0;
+  let b = 0;
+  for (let y = 0; y < canvas.height; y += 1) {
+    for (let x = 0; x < canvas.width; x += 1) {
+      if (data[(y * canvas.width + x) * 4 + 3]! <= 16) {
+        continue;
+      }
+      if (x < l) l = x;
+      if (y < t) t = y;
+      if (x > r) r = x;
+      if (y > b) b = y;
+    }
+  }
+  if (r < l || b < t) {
+    return {l: 0, t: 0, r: canvas.width, b: canvas.height};
+  }
+  return {l, t, r: r + 1, b: b + 1};
+}
+
 function drawWelcome(
   ctx: CanvasRenderingContext2D,
   width: number,
@@ -450,34 +512,42 @@ function drawWelcome(
 ): TextBounds {
   ctx.clearRect(0, 0, width, height);
   const size = height * 0.123;
-  const tracking = size * 0.22;
   const text = "WELCOME";
-  ctx.font = `500 ${size}px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace`;
-  ctx.textBaseline = "middle";
-  ctx.textAlign = "left";
-  ctx.fillStyle = "rgba(216, 245, 222, 0.96)";
-  ctx.shadowColor = "rgba(176, 255, 196, 0.4)";
-  ctx.shadowBlur = size * 0.22;
-
-  let total = 0;
-  const widths: number[] = [];
-  for (const ch of text) {
-    const w = ctx.measureText(ch).width;
-    widths.push(w);
-    total += w;
-  }
-  total += tracking * (text.length - 1);
-
-  let x = width * 0.5 - total * 0.5;
-  const startX = x;
-  const y = height * 0.5;
-  text.split("").forEach((ch, index) => {
-    ctx.fillText(ch, x, y);
-    x += widths[index] + tracking;
+  const glyphs = [...text].map((ch, index) => {
+    const canvas = rasterRecallGlyph({
+      ch,
+      face: "raster",
+      size,
+      sx: 1,
+      sy: 1,
+      dy: 0,
+      track: WELCOME_TRACK,
+      weight: 600,
+      pinkDx: 0,
+      pinkDy: 0,
+      greenDx: 0,
+      greenDy: 0,
+      bloom: RECALL.bloom,
+      seed: index + 1,
+    });
+    const ink = inkBox(canvas);
+    const inkH = Math.max(1, ink.b - ink.t);
+    const scale = size / inkH;
+    return {canvas, scale, advance: canvas.width * scale};
   });
-
-  const padX = size * 0.55 / width;
-  const padY = size * 0.7 / height;
+  const gap = WELCOME_TRACK * size;
+  const total = glyphs.reduce((sum, glyph) => sum + glyph.advance, 0) + gap * (glyphs.length - 1);
+  let cursor = width * 0.5 - total * 0.5;
+  const startX = cursor;
+  ctx.imageSmoothingEnabled = false;
+  for (const glyph of glyphs) {
+    const drawW = glyph.canvas.width * glyph.scale;
+    const drawH = glyph.canvas.height * glyph.scale;
+    ctx.drawImage(glyph.canvas, cursor, height * 0.5 - drawH * 0.5, drawW, drawH);
+    cursor += glyph.advance + gap;
+  }
+  const padX = size * 0.2 / width;
+  const padY = size * 0.72 / height;
   return {
     minX: startX / width - padX,
     maxX: (startX + total) / width + padX,
@@ -532,8 +602,8 @@ export function createCrtMoireGl(canvas: HTMLCanvasElement): CrtMoireGl | null {
   const textCtx = textCanvas.getContext("2d");
   const textTex = gl.createTexture();
   gl.bindTexture(gl.TEXTURE_2D, textTex);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 
@@ -559,6 +629,16 @@ export function createCrtMoireGl(canvas: HTMLCanvasElement): CrtMoireGl | null {
   const uTextInside = gl.getUniformLocation(program, "uTextInside");
   const uTextMin = gl.getUniformLocation(program, "uTextMin");
   const uTextMax = gl.getUniformLocation(program, "uTextMax");
+  const uChroma = gl.getUniformLocation(program, "uChroma");
+  const uChromaMax = gl.getUniformLocation(program, "uChromaMax");
+  const uChromaPink = gl.getUniformLocation(program, "uChromaPink");
+  const uChromaGreen = gl.getUniformLocation(program, "uChromaGreen");
+  const uChromaJitter = gl.getUniformLocation(program, "uChromaJitter");
+  const uChromaDead = gl.getUniformLocation(program, "uChromaDead");
+  const uPinkAlpha = gl.getUniformLocation(program, "uPinkAlpha");
+  const uGreenAlpha = gl.getUniformLocation(program, "uGreenAlpha");
+  const uPinkColor = gl.getUniformLocation(program, "uPinkColor");
+  const uGreenColor = gl.getUniformLocation(program, "uGreenColor");
   const uText = gl.getUniformLocation(program, "uText");
   const uHoleCenter = gl.getUniformLocation(program, "uHoleCenter");
   const uHoleAmount = gl.getUniformLocation(program, "uHoleAmount");
@@ -645,7 +725,19 @@ export function createCrtMoireGl(canvas: HTMLCanvasElement): CrtMoireGl | null {
 
   const getTextBounds = () => textBounds;
 
+  const pinkColor = recallRgb(RECALL.pink);
+  const greenColor = recallRgb(RECALL.green);
+  let chromaX = 0;
+  let chromaY = 0;
+  let chromaTime = -1;
+
   const render = (frame: MoireFrame) => {
+    const dt = chromaTime < 0 ? 0 : Math.min(0.05, Math.max(0, frame.time - chromaTime));
+    chromaTime = frame.time;
+    const follow = 1 - Math.exp(-dt / WELCOME_CHROMA.follow);
+    chromaX += ((frame.mouseX - 0.5) * 2 - chromaX) * follow;
+    chromaY += ((0.5 - frame.mouseY) * 2 - chromaY) * follow;
+
     gl.viewport(0, 0, width, height);
     gl.useProgram(program);
     gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
@@ -668,6 +760,16 @@ export function createCrtMoireGl(canvas: HTMLCanvasElement): CrtMoireGl | null {
     gl.uniform1f(uTextInside, frame.textInside);
     gl.uniform2f(uTextMin, textBounds.minX, 1.0 - textBounds.maxY);
     gl.uniform2f(uTextMax, textBounds.maxX, 1.0 - textBounds.minY);
+    gl.uniform2f(uChroma, chromaX, chromaY);
+    gl.uniform1f(uChromaMax, WELCOME_CHROMA.maxPx);
+    gl.uniform1f(uChromaPink, WELCOME_CHROMA.pink);
+    gl.uniform1f(uChromaGreen, WELCOME_CHROMA.green);
+    gl.uniform1f(uChromaJitter, WELCOME_CHROMA.jitterPx);
+    gl.uniform1f(uChromaDead, WELCOME_CHROMA.dead);
+    gl.uniform1f(uPinkAlpha, RECALL.pinkAlpha);
+    gl.uniform1f(uGreenAlpha, RECALL.greenAlpha);
+    gl.uniform3f(uPinkColor, pinkColor[0], pinkColor[1], pinkColor[2]);
+    gl.uniform3f(uGreenColor, greenColor[0], greenColor[1], greenColor[2]);
     gl.uniform1i(uText, 0);
     gl.uniform1i(uGuide, 1);
     gl.uniform1f(uGuideAmount, frame.guideAmount);
@@ -694,6 +796,10 @@ export function createCrtMoireGl(canvas: HTMLCanvasElement): CrtMoireGl | null {
     gl.deleteShader(vs);
     gl.deleteShader(fs);
   };
+
+  void document.fonts.ready.then(() => {
+    uploadText();
+  });
 
   return {render, resize, setGuide, getTextBounds, destroy};
 }

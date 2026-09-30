@@ -33,6 +33,7 @@ export type ArchiveItem = {
   residual: number;
   tiltX: number;
   tiltZ: number;
+  z: number;
 };
 
 type ArchiveClip = {
@@ -76,6 +77,73 @@ function urls(
   return (items ?? [])
     .map((item) => item?.asset?.url)
     .filter((url): url is string => Boolean(url));
+}
+
+function clamp(n: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, n));
+}
+
+function randGaussian(rng: () => number) {
+  let u = 0;
+  let v = 0;
+  while (u === 0) {
+    u = rng();
+  }
+  while (v === 0) {
+    v = rng();
+  }
+  const n = Math.sqrt(-2 * Math.log(u)) * Math.cos(Math.PI * 2 * v);
+  return clamp(n, -2.2, 2.2);
+}
+
+function coverOf(a: ArchiveItem, b: ArchiveItem) {
+  const A = clipBox(a);
+  const B = clipBox(b);
+  const w = Math.min(A.r, B.r) - Math.max(A.l, B.l);
+  const h = Math.min(A.b, B.b) - Math.max(A.t, B.t);
+  if (w <= 0 || h <= 0) {
+    return 0;
+  }
+  const area = Math.max(1, (A.r - A.l) * (A.b - A.t));
+  return (w * h) / area;
+}
+
+function loosenPlacement(items: ArchiveItem[], rng: () => number) {
+  const bases = items.map((item) => ({x: item.x, y: item.y}));
+  for (const item of items) {
+    const dx = clamp(randGaussian(rng) * item.w * 0.09, -item.w * 0.2, item.w * 0.2);
+    const dy = clamp(randGaussian(rng) * item.h * 0.09, -item.h * 0.2, item.h * 0.2);
+    item.x += (dx / ARCHIVE.clipLayoutW) * 100;
+    item.y += (dy / ARCHIVE.clipLayoutH) * 100;
+    const scale = 1 + clamp(randGaussian(rng) * 0.022, -0.05, 0.05);
+    item.w *= scale;
+    item.h *= scale;
+    item.tiltX += clamp(randGaussian(rng) * 1.4, -3.5, 3.5);
+    item.tiltZ += clamp(randGaussian(rng) * 1.4, -3.5, 3.5);
+    item.z = clamp(randGaussian(rng) * 6, -14, 14);
+    const maxX = Math.max(3, 100 - (item.w / ARCHIVE.clipLayoutW) * 100 - 3);
+    const maxY = Math.max(3, 100 - (item.h / ARCHIVE.clipLayoutH) * 100 - 6);
+    item.x = clamp(item.x, 2, maxX);
+    item.y = clamp(item.y, 2, maxY);
+  }
+  items.forEach((item, index) => {
+    const base = bases[index];
+    if (!base) {
+      return;
+    }
+    for (const other of items) {
+      if (other === item || coverOf(item, other) <= 0.82) {
+        continue;
+      }
+      item.x = base.x + (item.x - base.x) * 0.35;
+      item.y = base.y + (item.y - base.y) * 0.35;
+      break;
+    }
+    const maxX = Math.max(3, 100 - (item.w / ARCHIVE.clipLayoutW) * 100 - 3);
+    const maxY = Math.max(3, 100 - (item.h / ARCHIVE.clipLayoutH) * 100 - 6);
+    item.x = clamp(item.x, 2, maxX);
+    item.y = clamp(item.y, 2, maxY);
+  });
 }
 
 function tiltOf(rng: () => number) {
@@ -363,9 +431,13 @@ const FRAG_TITLES = [
   "NULL.MOV",
 ];
 
-export function buildArchiveItems(projects: Project[]): ArchiveItem[] {
+export function buildArchiveItems(
+  projects: Project[],
+  seed = sessionSeed(),
+  loosenSeed?: number,
+): ArchiveItem[] {
   const ordered = [...projects].sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
-  const rng = mulberry32(sessionSeed());
+  const rng = mulberry32(seed);
   const clips = collectClips(ordered);
   const images = ordered.flatMap((project) => urls(project.previewImage));
   const real: ArchiveItem[] = clips.map((clip) => ({
@@ -392,6 +464,7 @@ export function buildArchiveItems(projects: Project[]): ArchiveItem[] {
     clickable: true,
     crop: "50% 50%",
     residual: 0,
+    z: 0,
     ...scatter(rng),
     ...tiltOf(rng),
   }));
@@ -427,6 +500,7 @@ export function buildArchiveItems(projects: Project[]): ArchiveItem[] {
       clickable: false,
       crop: `${Math.round(rng() * 100)}% ${Math.round(rng() * 100)}%`,
       residual: randRange(rng, 0.3, 0.5),
+      z: 0,
       ...scatter(rng),
       ...tiltOf(rng),
     });
@@ -435,5 +509,9 @@ export function buildArchiveItems(projects: Project[]): ArchiveItem[] {
   fillEmptyWindows(real, clips, rng);
   reduceNeighborClashes(real, rng);
   spreadCues(real, rng);
-  return shuffle(real, rng);
+  const placed = shuffle(real, rng);
+  if (loosenSeed != null) {
+    loosenPlacement(placed, mulberry32(loosenSeed));
+  }
+  return placed;
 }

@@ -15,6 +15,23 @@ function slideOf(rng: () => number) {
   };
 }
 
+function clamp(n: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, n));
+}
+
+function randGaussian(rng: () => number) {
+  let u = 0;
+  let v = 0;
+  while (u === 0) {
+    u = rng();
+  }
+  while (v === 0) {
+    v = rng();
+  }
+  const n = Math.sqrt(-2 * Math.log(u)) * Math.cos(Math.PI * 2 * v);
+  return clamp(n, -2.2, 2.2);
+}
+
 export function buildSpawnPlan(items: ArchiveItem[]): SpawnEvent[] {
   const rng = mulberry32(itemSeed() ^ 0x51a2);
   const ordered = [...items].sort((a, b) => a.y - b.y);
@@ -27,6 +44,10 @@ export function buildSpawnPlan(items: ArchiveItem[]): SpawnEvent[] {
       ...slideOf(rng),
     });
     t += randRange(rng, ARCHIVE.spawnGapMin, ARCHIVE.spawnGapMax);
+  }
+  for (const event of plan) {
+    const jitter = clamp(randGaussian(rng) * 28, -55, 55);
+    event.appearAt = Math.max(0, Math.round(event.appearAt + jitter));
   }
   return plan;
 }
