@@ -6,6 +6,7 @@ const VOICE_F = [220, 329.6, 440] as const;
 const VOICE_PAN = [-0.45, 0, 0.45] as const;
 const RADIO_STATIC_URL = "/sounds/airplane-cabin-loop.wav";
 const RADIO_STATIC_GAIN = 0.15;
+const RADIO_GAIN_FADE_SEC = 0.4;
 const MUFFLED_URL = "/sounds/airplane-muffled.mp3";
 // Cabin loop RMS is about -10.4 dBFS; this voice file is about -20.6 dBFS.
 // Same bus level as the cabin bed at RADIO_STATIC_GAIN, so the first expand does not drop the volume.
@@ -144,6 +145,8 @@ export class SoundEngine {
   private radioBuffer: AudioBuffer | null = null;
   private radioStatic: AudioBufferSourceNode | null = null;
   private radioGain: GainNode | null = null;
+  private radioRestGain = RADIO_STATIC_GAIN;
+  private radioLive = false;
   private radioFadeRaf = 0;
   private radioFadeUnsub: (() => void) | null = null;
   private cabinFilter: BiquadFilterNode | null = null;
@@ -412,8 +415,30 @@ export class SoundEngine {
     }
   }
 
+  private rampRadioGain(value: number, seconds: number) {
+    if (!this.ctx || !this.radioGain) {
+      return;
+    }
+    const now = this.ctx.currentTime;
+    const param = this.radioGain.gain;
+    const from = param.value;
+    param.cancelScheduledValues(now);
+    param.setValueAtTime(from, now);
+    if (seconds > 0) {
+      param.linearRampToValueAtTime(value, now + seconds);
+      return;
+    }
+    param.setValueAtTime(value, now);
+  }
+
   private startRadioStatic() {
-    if (!this.ctx || !this.archiveBed || !this.radioBuffer || this.radioStatic) {
+    if (!this.ctx || !this.archiveBed || !this.radioBuffer) {
+      return;
+    }
+    if (this.radioStatic) {
+      this.stopRadioFade();
+      this.radioLive = true;
+      this.rampRadioGain(this.radioRestGain, RADIO_GAIN_FADE_SEC);
       return;
     }
     const source = this.ctx.createBufferSource();
@@ -426,6 +451,7 @@ export class SoundEngine {
     source.start(this.ctx.currentTime, cueOffset(this.radioBuffer));
     this.radioStatic = source;
     this.radioGain = gain;
+    this.radioLive = true;
     this.fadeRadioIn(gain);
     if (this.cabinFilter) {
       const open = this.ctx.currentTime;
@@ -482,26 +508,16 @@ export class SoundEngine {
     this.radioFadeRaf = requestAnimationFrame(step);
   }
 
-  private stopRadioStatic() {
+  private stopRadioStatic(fadeSec = 0) {
     this.stopRadioFade();
-    const source = this.radioStatic;
-    this.radioStatic = null;
-    const gain = this.radioGain;
-    this.radioGain = null;
-    if (source) {
-      try {
-        source.stop();
-      } catch {
-        /* already stopped */
+    if (this.radioGain && this.radioLive) {
+      const level = this.radioGain.gain.value;
+      if (level > 0.0001) {
+        this.radioRestGain = level;
       }
-      source.disconnect();
     }
-    gain?.disconnect();
-    if (this.archiveBed && this.ctx) {
-      const now = this.ctx.currentTime;
-      this.archiveBed.gain.cancelScheduledValues(now);
-      this.archiveBed.gain.setValueAtTime(0, now);
-    }
+    this.radioLive = false;
+    this.rampRadioGain(0, fadeSec);
   }
 
   private async prepareMuffled(ctx: AudioContext) {
@@ -624,7 +640,7 @@ export class SoundEngine {
     }
     this.stopMuffled(0);
     this.windowPhase = "bed";
-    this.stopRadioStatic();
+    this.stopRadioStatic(0);
     this.fadeBed(this.mainBed, 1, 0.1);
   }
 
@@ -633,7 +649,7 @@ export class SoundEngine {
       return;
     }
     this.windowPhase = "muffle";
-    this.stopRadioStatic();
+    this.stopRadioStatic(RADIO_GAIN_FADE_SEC);
     this.startMuffled(0);
   }
 
@@ -647,7 +663,7 @@ export class SoundEngine {
 
   pauseArchiveBed() {
     this.windowPhase = "picture";
-    this.stopRadioStatic();
+    this.stopRadioStatic(RADIO_GAIN_FADE_SEC);
     this.stopMuffled(0);
   }
 
