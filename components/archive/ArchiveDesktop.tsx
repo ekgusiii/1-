@@ -1990,6 +1990,18 @@ function Detail({item}: {item: ArchiveItem}) {
           <h2>{item.projectTitle ?? item.title}</h2>
           <p>{[item.year, item.category].filter(Boolean).join(" · ")}</p>
           {item.shortDescription ? <p>{item.shortDescription}</p> : null}
+          {item.videoInfo.length ? (
+            <div className="arc-detail__info-slot">
+              <dl className="arc-detail__info">
+                {item.videoInfo.map((line, index) => (
+                  <div key={`${line.label}-${index}`}>
+                    <dt>{line.label}</dt>
+                    <dd>{line.value}</dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+          ) : null}
         </aside>
       </div>
       {rest.length || extras.length ? (

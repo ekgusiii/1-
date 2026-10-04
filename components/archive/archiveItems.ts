@@ -1,5 +1,5 @@
 import {ARCHIVE, mulberry32, randInt, randRange} from "@/components/archive/archiveConfig";
-import type {Project} from "@/sanity/lib/queries";
+import type {Project, VideoInfoLine} from "@/sanity/lib/queries";
 
 export type ArchiveKind = "project" | "noise" | "crop" | "bar";
 
@@ -21,6 +21,7 @@ export type ArchiveItem = {
   video: string | null;
   images: string[];
   videos: string[];
+  videoInfo: {label: string; value: string}[];
   x: number;
   y: number;
   w: number;
@@ -53,6 +54,7 @@ type ArchiveClip = {
   image: string | null;
   images: string[];
   videos: string[];
+  videoInfo: {label: string; value: string}[];
   clipIndex: number;
 };
 
@@ -69,6 +71,14 @@ export function sessionSeed() {
   const seed = Date.now() & 0xffff;
   window.sessionStorage.setItem(SEED_KEY, String(seed));
   return seed;
+}
+
+function videoInfoLines(info: VideoInfoLine[] | null | undefined) {
+  return (info ?? []).flatMap((line) => {
+    const label = line?.label?.trim() ?? "";
+    const value = line?.value?.trim() ?? "";
+    return label && value ? [{label, value}] : [];
+  });
 }
 
 function urls(
@@ -229,6 +239,7 @@ function collectClips(projects: Project[]): ArchiveClip[] {
         image: imgs[0] ?? null,
         images: imgs,
         videos,
+        videoInfo: videoInfoLines(file.info),
         clipIndex: index + 1,
       }];
     });
@@ -252,6 +263,7 @@ function applyClip(item: ArchiveItem, clip: ArchiveClip) {
   item.video = clip.url;
   item.images = item.images.length ? item.images : clip.images;
   item.videos = [clip.url, ...others];
+  item.videoInfo = clip.videoInfo;
   item.clickable = true;
   item.residual = 0;
 }
@@ -298,6 +310,7 @@ function swapClipData(a: ArchiveItem, b: ArchiveItem) {
     order: a.order,
     video: a.video,
     videos: a.videos,
+    videoInfo: a.videoInfo,
     cueAt: a.cueAt,
   };
   a.slug = b.slug;
@@ -313,6 +326,7 @@ function swapClipData(a: ArchiveItem, b: ArchiveItem) {
   a.order = b.order;
   a.video = b.video;
   a.videos = b.videos;
+  a.videoInfo = b.videoInfo;
   a.cueAt = b.cueAt;
   b.slug = hold.slug;
   b.projectTitle = hold.projectTitle;
@@ -327,6 +341,7 @@ function swapClipData(a: ArchiveItem, b: ArchiveItem) {
   b.order = hold.order;
   b.video = hold.video;
   b.videos = hold.videos;
+  b.videoInfo = hold.videoInfo;
   b.cueAt = hold.cueAt;
 }
 
@@ -458,6 +473,7 @@ export function buildArchiveItems(
     video: clip.url,
     images: clip.images,
     videos: [clip.url, ...clip.videos.filter((url) => url !== clip.url)],
+    videoInfo: clip.videoInfo,
     kind: "project",
     clipIndex: clip.clipIndex,
     cueAt: ARCHIVE.videoCueAt,
@@ -494,6 +510,7 @@ export function buildArchiveItems(
       video: null,
       images: src && kind === "crop" ? [src] : [],
       videos: [],
+      videoInfo: [],
       kind,
       clipIndex: null,
       cueAt: ARCHIVE.videoCueAt,

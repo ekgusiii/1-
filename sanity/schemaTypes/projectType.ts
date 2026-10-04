@@ -67,6 +67,42 @@ export const projectType = defineType({
           options: {
             accept: 'video/*',
           },
+          fields: [
+            defineField({
+              name: 'info',
+              title: 'Info',
+              type: 'array',
+              description: '2차 확대 화면에서 제목 아래에 표시할 라벨/값. 비워 두면 표시하지 않습니다.',
+              of: [
+                defineArrayMember({
+                  type: 'object',
+                  name: 'videoInfoLine',
+                  title: 'Line',
+                  fields: [
+                    defineField({
+                      name: 'label',
+                      title: 'Label',
+                      type: 'string',
+                      validation: (rule) => rule.required(),
+                    }),
+                    defineField({
+                      name: 'value',
+                      title: 'Value',
+                      type: 'text',
+                      rows: 3,
+                      validation: (rule) => rule.required(),
+                    }),
+                  ],
+                  preview: {
+                    select: {
+                      title: 'label',
+                      subtitle: 'value',
+                    },
+                  },
+                }),
+              ],
+            }),
+          ],
         }),
       ],
     }),

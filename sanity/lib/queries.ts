@@ -18,6 +18,11 @@ const previewVideoFields = /* groq */ `
     url,
     mimeType,
     originalFilename
+  },
+  info[]{
+    _key,
+    label,
+    value
   }
 `;
 
@@ -62,6 +67,12 @@ export type PreviewImage = {
   crop?: unknown;
 };
 
+export type VideoInfoLine = {
+  _key?: string;
+  label?: string | null;
+  value?: string | null;
+};
+
 export type PreviewVideo = {
   _key?: string;
   asset: {
@@ -70,6 +81,7 @@ export type PreviewVideo = {
     mimeType?: string | null;
     originalFilename?: string | null;
   } | null;
+  info?: VideoInfoLine[] | null;
 };
 
 export type Project = {
