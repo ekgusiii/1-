@@ -983,6 +983,9 @@ export function ArchiveDesktop({projects, openSlug}: ArchiveDesktopProps) {
       setRecallPhase(phase);
     };
     const beginRecall = () => {
+      if (openRef.current) {
+        return;
+      }
       const phase = recallPhaseRef.current;
       if (phase !== "idle" && phase !== "charge") {
         return;
@@ -1016,6 +1019,9 @@ export function ArchiveDesktop({projects, openSlug}: ArchiveDesktopProps) {
       );
     };
     const onMove = (event: globalThis.PointerEvent) => {
+      if (openRef.current) {
+        return;
+      }
       const now = performance.now();
       const prev = pointerRef.current;
       const dt = Math.max(8, now - (prev.t || now));
@@ -1066,7 +1072,17 @@ export function ArchiveDesktop({projects, openSlug}: ArchiveDesktopProps) {
       const frameDt = Math.min(0.05, lastFrame ? (now - lastFrame) / 1000 : 0.016);
       lastFrame = now;
       const recallNow = recallPhaseRef.current;
-      if (recallNow === "idle") {
+      if (openRef.current) {
+        if (shakeHoldUntil || intensity > 0 || samples.length > 0 || flips.length > 0) {
+          shakeHoldUntil = 0;
+          heldIntensity = 0;
+          samples.length = 0;
+          flips.length = 0;
+          lastSign.x = 0;
+          lastSign.y = 0;
+          clearJolt();
+        }
+      } else if (recallNow === "idle") {
         if (shakeHoldUntil) {
           const left = shakeHoldUntil - now;
           if (left <= 0) {
